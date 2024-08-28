@@ -3,7 +3,8 @@ Figura Animation Overhaul Avatar made particularly for Wynncraft.\
 This figura avatar makes the normal Minecraft player avatar have\
 arm and leg limbs and adds numerous animations that replace\
 the normal Minecraft animations. This avatar was made using\
-Figura version 0.1.4
+Figura versions 0.1.4, 0.1.5\
+Now works with Minecraft version 1.20 and 1.21
 
 ![MovementAnimationDemo](https://github.com/emart126/AnimationsPlus/assets/125086504/ad378241-bdb0-43a9-8d58-9f0e7041f687)
 ![ClimbingAnimationDemo](https://github.com/emart126/AnimationsPlus/assets/125086504/65b0baa1-a695-4efc-825c-3cfb761c2ccd)
@@ -16,6 +17,7 @@ Figura version 0.1.4
 +Jumping\
 +Crouch Jumping\
 +Sprint Jumping\
++Crawling\
 +Falling\
 +Landing\
 +Swimming\
@@ -25,7 +27,10 @@ Figura version 0.1.4
 +Sitting\
 +Riding Horse\
 +Idling\
-+Punching
++Punching\
++Sword Swinging\
++Bow Shooting\
++Crossbow Shooting
 
 ### Added Features for Wynncraft
 +Warrior Attacking\
@@ -39,10 +44,11 @@ Figura version 0.1.4
 -Left handed mode
 
 ### Other Added Feature (Figura Action Wheel)
-The firgura action wheel has an added setting to turn off and\
-on weapon holstering.\
-The action wheel also has one added emote and may get more\
-in future versions of the avatar.
+The firgura action wheel has temporary taunt animations\
+that will get future updates but animations are still\
+in development.\
+There is now a second page to change the avatars settings\
+such as enabling/disabling weapon holstering and idle animations
 
 ### Credits
 Main Programming: Vance568\

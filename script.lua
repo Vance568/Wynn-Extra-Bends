@@ -1,12 +1,13 @@
 -- ///////////////////////////////////////////////////////////////// --
 --                          Wynn Extra Bends
 --                              Vance568
---                               v1.0.0
+--                               v1.1
 --
 --               Helper Library Authors: Squishy, Katt962
 -- ///////////////////////////////////////////////////////////////// --
 
 local squapi = require("SquAPI")
+local squassets = require("SquAssets")
 
 -- Hide vanilla model
 vanilla_model.PLAYER:setVisible(false)
@@ -40,6 +41,7 @@ end
 
 -- Settings
 local sheathOption = true;
+local idleAnimations = true;
 
 -- Animation states/ticks
 local state
@@ -47,9 +49,11 @@ local oldState
 local randAnim
 local rightWasPressed
 local randTick = 400
-local fallTick = 0
+local fallTimer = 0
+local startFallTime = 0
+local startedFall = false
 local idleTick = 0
-local jump = 1
+local jump = false
 
 -- BlockBench model parts
 local pModel = models.model.Player
@@ -66,11 +70,15 @@ AnimIdle = animations.model["Idle_0"]
 AnimIdling1 = animations.model["Idle_1"]
 AnimIdling2 = animations.model["Idle_2"]
 AnimIdling3 = animations.model["Idle_3"]
+
 AnimWalk = animations.model["Walking"]
 AnimCrouching = animations.model["Crouch_0"]
 AnimCrouch = animations.model["Crouch_1"]
 AnimUnCrouch = animations.model["Crouch_2"]
 AnimCrouchWalk = animations.model["Sneaking"]
+
+AnimCrawl = animations.model["Crawl_Still"]
+AnimCrawling = animations.model["Crawling"]
 
 AnimFloat = animations.model["Float"]
 AnimSwim = animations.model["Swim_0"]
@@ -99,6 +107,12 @@ AnimSit = animations.model["Sit"]
 AnimHorseSit = animations.model["Horse_Sitting"]
 AnimHorseRiding = animations.model["Horse_Riding"]
 
+AnimTaunt1 = animations.model["Taunt_1"]
+AnimTaunt2a = animations.model["Taunt_2"]
+AnimTaunt2b = animations.model["Taunt_3"]
+AnimTaunt3 = animations.model["Taunt_4"]
+AnimTaunt4 = animations.model["Taunt_5"]
+
 -- Attacks ----------------------------------------------------------
 
 AnimPunch = animations.model["Punch"]
@@ -123,6 +137,7 @@ ShamanSwing = animations.model["Relik_Strike"]
 
 -- Archer -------
 ArcherShoot = animations.model["Bow_Shoot"]
+ArcherShootHold = animations.model["Bow_Shoot_Hold"]
 
 -- Wynncraft Spells -------------------------------------------------
 -- R1, L2, R3 = s1
@@ -202,6 +217,15 @@ function StopAllSpell()
     -- AnimMovement:stop()
 end
 
+function StopAllIdle()
+    AnimIdling1:stop()
+    AnimIdling2:stop()
+    AnimIdling3:stop()
+    AnimTaunt1:stop()
+    AnimTaunt3:stop()
+    AnimTaunt4:stop()
+end
+
 -- Check if itemStack has a class identified with it
 function CheckClassItem(item)
     if (item == nil) then
@@ -222,12 +246,14 @@ function CheckClassItem(item)
     return(nil)
 end
 
--- Check if given number is between x and y (inclusive)
-function IsBetweenXY(num, x, y)
-    if (num >= x and num <= y) then
-        return true;
+-- Check if given number is in array
+function NumInArray(num, arr)
+    for i=1, #arr do
+        if (num == arr[i]) then
+            return true
+        end
     end
-    return false;
+    return false
 end
 
 -- Given what animations that need to play, check which one to play under certain conditions on a left click
@@ -324,13 +350,14 @@ local function isOnGround(entity)
 end
 
 -- Given which jump to play, play that particular jump. returns next jump value
-function WhichJump(j, j1Anim, j2Anim)
-    if (j == 1) then
+function WhichJump(j1Anim, j2Anim)
+    if (jump) then
         j1Anim:play()
-        return 2
+        pings.legJump(false)
+        return
     end
     j2Anim:play()
-    return 1
+    pings.legJump(true)
 end
 
 -- Get random number between 400 and 600 that is also divisible by 80
@@ -342,21 +369,9 @@ function GetRandIdleTick()
     return(num)
 end
 
--- -- smoothly play an animation
--- function smoothPlay(anim, modelElem, pVel)
---     anim:setBlend(modelElem:doBounce(pVel*4.633, .001, .2))
--- 	anim:setSpeed(modelElem.pos)
--- end
-
--- -- Slow down animation and stop playing it
--- function smoothStop(anim, modelElem)
---     anim:setBlend(modelElem:doBounce(0, .001, .2))
--- 	anim:setSpeed(modelElem.pos)
--- end
-
 -- Stop playing all 'basic action' animations except animations given
 function stopBasicAnims(exceptionTable)
-    local animationTable = {AnimIdle, AnimWalk, AnimCrouching, AnimCrouchWalk, AnimSprint, AnimJumping, AnimShortFalling,
+    local animationTable = {AnimIdle, AnimWalk, AnimCrouching, AnimCrouchWalk, AnimSprint, AnimCrawl, AnimCrawling, AnimJumping, AnimShortFalling,
                             AnimClimb, AnimClimbHold, AnimFloat, AnimSwim, AnimSit, AnimHorseSit, AnimHorseRiding, AnimCrouchJumping}
     local isException
     for i,anim in ipairs(animationTable) do
@@ -377,7 +392,7 @@ end
 function getAnimPriority()
     local animationTable = {AnimJump, AnimJumpLand, AnimCrouch, AnimUnCrouch, AnimFall, AnimShortLand, AnimFallLand,
                             AnimJumpMove1, AnimJumpMove2, AnimJumpMoveStop1, AnimJumpMoveStop2, AnimIdle, AnimCrouching,
-                            AnimCrouchWalk, AnimWalk, AnimSprint, AnimJumping, AnimCrouchJumping, AnimShortFalling,
+                            AnimCrouchWalk, AnimWalk, AnimSprint, AnimCrawl, AnimCrawling, AnimJumping, AnimCrouchJumping, AnimShortFalling,
                             AnimFalling, AnimSwim, AnimFloat, AnimClimb, AnimClimbHold, AnimSit, AnimHorseSit, AnimHorseRiding}
     for i,anim in ipairs(animationTable) do
         if (anim == AnimIdle and anim:isPlaying() and not AnimCrouching:isPlaying()) then
@@ -393,6 +408,8 @@ end
 local weaponClass
 local isActionWheelOpen
 local oldWeaponClass
+local wheelCheck
+local oldWheelCheck
 
 function pings.syncHeldItemIsWeapon(strClass)
     weaponClass = strClass
@@ -402,10 +419,17 @@ function pings.syncAcitonWheel(bool)
     isActionWheelOpen = bool
 end
 
-function events.tick()
-    if (world.getTime() % 20 ~= 0) then
-        return
+function pings.legJump(bool)
+    jump = bool
+end
+
+function events.render(delta)
+    -- Is Action Wheel Open
+    wheelCheck = action_wheel:isEnabled()
+    if (wheelCheck ~= oldWheelCheck) then
+        pings.syncAcitonWheel(wheelCheck)
     end
+    oldWheelCheck = wheelCheck
 
     -- Held Item Wynncraft Class
     local currItem = player:getHeldItem()
@@ -416,8 +440,6 @@ function events.tick()
     end
     oldWeaponClass = class
 
-    -- Is Action Wheel Open
-    pings.syncAcitonWheel(action_wheel:isEnabled())
 end
 
 -- left-clicking detection ==============================================================================
@@ -439,7 +461,7 @@ function pings.onHitDo()
         end
 
         -- Daggers --
-        if (weaponClass == "Assassin/Ninja") then
+        if (weaponClass == "Assassin/Ninja" or string.find(player:getHeldItem():toStackString(), "sword") ~= nil) then
             CheckAnimToPlayLeftClick(AnimR1, AnimR2, AnimL2, AssassinSwing1, AssassinSwing2, AssassinSwing3, AnimSecondSpell, AnimThirdSpell)
             return
         end
@@ -577,8 +599,7 @@ useKey.press = pings.onRightClickDo
 
 -- SquAPI Animation Handling ============================================================================
 
-squapi.smoothHead(modelHead, 0.3, 1, false)
-squapi.smoothTorso(modelMainBody, 0.2)
+squapi.smoothHead:new({modelHead, modelMainBody}, {0.6, 0.25}, 0.1, 1.75, false)
 
 -- Render animation conditions by in game ticks
 function events.tick() --============================================================================================================================
@@ -600,9 +621,10 @@ function events.tick() --=======================================================
     AssassinSwing3:setPriority(p)
 
     ArcherShoot:setPriority(p)
+    ArcherShootHold:setPriority(p)
 
     ShamanSwing:setPriority(p)
-    
+
     -- AnimMovement:setPriority(4)
     -- AnimFirstSpell:setPriority(4)
     -- AnimSecondSpell:setPriority(4)
@@ -621,6 +643,9 @@ function events.tick() --=======================================================
 
     AnimWalk:setPriority(2)
     AnimSprint:setPriority(2)
+
+    AnimCrawl:setPriority(2)
+    AnimCrawling:setPriority(2)
 
     AnimJumping:setPriority(1)
     AnimJump:setPriority(2)
@@ -647,6 +672,12 @@ function events.tick() --=======================================================
     AnimHorseSit:setPriority(1)
     AnimHorseRiding:setPriority(1)
 
+    AnimTaunt1:setPriority(4)
+    AnimTaunt2a:setPriority(p)
+    AnimTaunt2b:setPriority(p)
+    AnimTaunt3:setPriority(4)
+    AnimTaunt4:setPriority(4)
+
     -- Handle crouch model position ---------------------------------------------
     if (player:getPose() == "CROUCHING") then
         pModel:setPos(0,2,0)
@@ -655,32 +686,40 @@ function events.tick() --=======================================================
     end
 
     -- Idling -------------------------------------------------------------------
-    if (state == "idle") then
-        idleTick = idleTick + 1
-        if (idleTick == randTick) then
-            randAnim = math.random(0, 2)
-            if (randAnim == 0) then
-                AnimIdling1:play()
-            elseif (randAnim == 1) then
-                AnimIdling2:play()
-            else
-                AnimIdling3:play()
+    if (idleAnimations) then
+        if (state == "idle") then
+            idleTick = idleTick + 1
+            if (idleTick == randTick) then
+                randAnim = math.random(0, 2)
+                if (randAnim == 0) then
+                    AnimIdling1:play()
+                elseif (randAnim == 1) then
+                    AnimIdling2:play()
+                else
+                    AnimIdling3:play()
+                end
+                idleTick = 0
+                randTick = GetRandIdleTick()
             end
+        else
             idleTick = 0
-            randTick = GetRandIdleTick()
+            StopAllIdle()
         end
-    else
-        idleTick = 0
-        AnimIdling1:stop()
-        AnimIdling2:stop()
-        AnimIdling3:stop()
+
+        if (hitKey:isPressed() and not action_wheel:isEnabled()) then
+            idleTick = 0
+            StopAllIdle()
+        end
     end
 
-    if (hitKey:isPressed() and not action_wheel:isEnabled()) then
-        idleTick = 0
-        AnimIdling1:stop()
-        AnimIdling2:stop()
-        AnimIdling3:stop()
+    -- Bow Shooting -------------------------------------------------------------
+    if (weaponClass ~= "Archer/Hunter" and string.find(player:getHeldItem():toStackString(), "bow") ~= nil) then
+        ShootingAction = player:getActiveItem():getUseAction() == "BOW" or player:getActiveItem():getUseAction() == "CROSSBOW"
+    end
+    if (ShootingAction) then
+        ArcherShootHold:play()
+    else
+        ArcherShootHold:stop()
     end
 
     -- Dedect right click use arm swing -----------------------------------------
@@ -737,7 +776,7 @@ function events.render(delta, context) --=======================================
     -- Play animation under certain conditions ----------------------------------
 
     -- Interacting with water
-    if (floating or swimming) then
+    if (floating or (swimming and floating)) then
         if (floating and not swimming and isGrounded) then
             -- On the ground, Underwater 
             if (crouching) then
@@ -773,7 +812,7 @@ function events.render(delta, context) --=======================================
         end
     else
         -- Outside of water
-        if (isGrounded and not ridingSeat) then
+        if (isGrounded and (not ridingSeat and not sitting)) then
             -- On the ground
             if (crouching) then
                 if (walking) then
@@ -787,7 +826,17 @@ function events.render(delta, context) --=======================================
                     AnimCrouching:play()
                 end
             elseif (not crouching) then
-                if (walking and not crouching and not sprinting) then
+                if (player:isVisuallySwimming()) then
+                    if (not walking) then
+                        state = "crawling"
+                        stopBasicAnims({AnimCrawl})
+                        AnimCrawl:play()
+                    elseif (walking) then
+                        state = "crawl walking"
+                        stopBasicAnims({AnimCrawling})
+                        AnimCrawling:play()
+                    end
+                elseif (walking and not crouching and not sprinting) then
                     state = "walking"
                     stopBasicAnims({AnimWalk, AnimJumping})
                     AnimWalk:play()
@@ -826,7 +875,7 @@ function events.render(delta, context) --=======================================
                     state = "sitting"
                     stopBasicAnims({AnimSit})
                     AnimSit:play()
-                elseif (not walking and (ridingMount or ridingSeat)) then
+                elseif (not walking and (sitting or ridingMount or ridingSeat)) then
                     if (horseSitting) then
                         state = "horseSitting"
                         stopBasicAnims({AnimHorseSit})
@@ -845,14 +894,19 @@ function events.render(delta, context) --=======================================
     end
 
     -- Falling conditions
+    --print((client:getSystemTime() % 10000) / 1000)
     if (state == "inAir" or state == "falling") then
-        fallTick = fallTick + 1
-        if (fallTick > 96) then
+        if (not startedFall) then
+            startFallTime = client:getSystemTime() / 1000
+            startedFall = true
+        end
+        fallTimer = (client:getSystemTime() / 1000 - startFallTime)
+
+        if (fallTimer > 0.7) then
             state = "falling"
-            fallTick = 96
         end
     else
-        fallTick = 0
+        startedFall = false
     end
 
     -- Crouching conditions
@@ -881,7 +935,7 @@ function events.render(delta, context) --=======================================
 
         if (oldState == "sprinting" and state == "inAir" and player:getVelocity()[2] > 0) then
             -- Jump sprinting
-            jump = WhichJump(jump, AnimJumpMove1, AnimJumpMove2)
+            WhichJump(AnimJumpMove1, AnimJumpMove2)
         elseif (oldState == "inAir" and state == "falling") then
             -- Going into Long falling
             AnimJumping:stop()
@@ -970,80 +1024,30 @@ function events.render(delta, context) --=======================================
     oldState = state
 end
 
--- function events.render() --=======================================================================================================================
---     local crouching = player:getPose() == "CROUCHING"
---     local swimming = player:isVisuallySwimming()
---     local floating = player:isInWater()
---     local sprinting = player:isSprinting()
---     local walking = player:getVelocity().xz:length() > .001
---     local climbing = player:isClimbing()
---     local isGrounded = isOnGround(player)
---     local sitting = player:getVehicle()
---     local ridingMount = player:getVehicle() and (player:getVehicle():getType() == "minecraft:horse"
---                                             or player:getVehicle():getType() == "minecraft:pig")
---     local ridingSeat = player:getVehicle() and (player:getVehicle():getType() == "minecraft:minecart"
---                                             or player:getVehicle():getType() == "minecraft:boat")
-
---     -- Testing animation transitions
---     local vel = squapi.getForwardVel()
--- 	if vel > 0.3 then vel = 0.3 end
---     if (walking and not crouching and not sprinting) then
---         if (not AnimWalk:isPlaying()) then
---             smoothWalkObj = squapi.bounceObject:new()
---             AnimWalk:play()
---         end
---         smoothPlay(AnimWalk, smoothWalkObj, vel)
---     else
---         if (AnimWalk:isPlaying()) then
---             smoothStop(AnimWalk, smoothWalkObj)
---         end
---         if (AnimWalk:getSpeed() <= 0) then
---             AnimWalk:stop()
---         end
---     end
-
---     print(AnimWalk:isPlaying(), AnimWalk:getSpeed())
--- end
-
 -- Physics variables ====================================================================================
-local stiff = 0.025
-local bounce = 0.06
-local bendability = 2
-local rArm = squapi.bounceObject:new()
-local lArm = squapi.bounceObject:new()
-local head = squapi.bounceObject:new()
-
-local currVel
-local oldVel
-local acceleration
-
--- initial phys calculations
-function events.entity_init() --=====================================================================================================================
-    -- Get initial velocity
-    currVel = player:getVelocity()
-    oldVel = player:getVelocity()
-    acceleration = player:getVelocity()
-end
+local rArm = squassets.BERP:new()
+local lArm = squassets.BERP:new()
+local head = squassets.BERP:new()
 
 -- "delta" is the percentage between the last and the next tick (as a decimal value, 0.0 to 1.0)
 -- "context" is a string that tells from where this render event was called (the paperdoll, gui, player render, first person)
 function events.render(delta, context) --============================================================================================================
 
-    -- Deal with first person hand model ----------------------------------------
-    vanilla_model.RIGHT_ARM:setVisible(context == "FIRST_PERSON")
+    -- First person hand model --------------------------------------------------
+    if (player:isLeftHanded()) then
+        vanilla_model.LEFT_ARM:setVisible(renderer:isFirstPerson() and context == "FIRST_PERSON")
+        vanilla_model.RIGHT_ARM:setVisible(false)
+    else
+        vanilla_model.RIGHT_ARM:setVisible(renderer:isFirstPerson() and context == "FIRST_PERSON")
+        vanilla_model.LEFT_ARM:setVisible(false)
+    end
 
     -- Physics handling ---------------------------------------------------------
-    local vel = squapi.getForwardVel()
-	local yvel = squapi.yvel()
+    local vel = squassets.forwardVel()
+	local yvel = squassets.verticalVel()
     local headRot = (modelHead:getOffsetRot()+180)%360-180
     local armTarget
     local headTarget
-
-    -- acceleration -------------------------------------------------------------
-    if (currVel ~= oldVel) then
-        acceleration = currVel - oldVel
-    end
-    currVel = player:getVelocity()
 
     -- Arm physics --------------------------------------------------------------
     modelRightArm:setRot(0, 0, rArm.pos*2)
@@ -1054,36 +1058,23 @@ function events.render(delta, context) --=======================================
     elseif (armTarget < -3) then
         armTarget = -3
     end
-	rArm:doBounce(armTarget, 0.01, .2)
-    lArm:doBounce(armTarget, 0.01, .2)
 
-    -- Idle Arms affected by gravity --------------------------------------------
-    -- if (state == "idle" and headRot[1] > 0) then
-    --     modelRightArm:setOffsetRot(-headRot[1],0,0)
-    --     modelLeftArm:setOffsetRot(-headRot[1],0,0)
-    -- else
-    --     modelRightArm:setOffsetRot(0,0,0)
-    --     modelLeftArm:setOffsetRot(0,0,0)
-    -- end
+    rArm:berp(armTarget, 0.25, 0.01, 0.2)
+    lArm:berp(armTarget, 0.25, 0.01, 0.2)
 
     -- Head physics -------------------------------------------------------------
     modelHead:setRot(head.pos*1.5, 0, 0)
-	headTarget = -yvel * 20
+    headTarget = -yvel * 20
     if (headTarget > 20) then
         headTarget = 20
     elseif (headTarget < -10) then
         headTarget = -10
     end
-	head:doBounce(headTarget, 0.01, .2)
 
+    if (-yvel*20 > -10) then
+        head:berp(headTarget, 0.25, 0.01, 0.2)
+    end
 
-    -- Hitting ground detection -------------------------------------------------
-    -- if (isOnGround(player) and (currVel[2] == 0 and acceleration[2] ~= currVel[2])) then
-    --     if (acceleration[2] < -0.24) then
-    --         AnimHitGround:play()
-    --     end
-    --     acceleration[2] = 0
-    -- end
 end
 
 -- Sheathing weapon
@@ -1100,7 +1091,6 @@ local oldWeapon
 
 local taskRotation
 local taskPosition
-local taskScale
 
 function pings.updateItemID(id)
     syncedItemID = id
@@ -1122,192 +1112,186 @@ function pings.updateWeaponClass(class)
     currWeapon = class
 end
 
-function pings.updateWeaponTask(vectRotX, vectRotY, vectRotZ, vecPosX, vecPosY, vecPosZ, vecScaleX, vecScaleY, vecScaleZ)
+function pings.updateWeaponTask(vectRotX, vectRotY, vectRotZ, vecPosX, vecPosY, vecPosZ)
     taskRotation = vectors.vec3(vectRotX, vectRotY, vectRotZ)
     taskPosition = vectors.vec3(vecPosX, vecPosY, vecPosZ)
-    taskScale = vectors.vec3(vecScaleX, vecScaleY, vecScaleZ)
 end
 
 function events.entity_init() --=====================================================================================================================
     task = pModel.Upper.body.SheathedWeapon:newItem("weapon")
-    task:setDisplayMode("GUI")
-    task:setPos(0, 16.5, 4)
-    task:setScale(1.5,1.5,1.5)
+    task:setDisplayMode("THIRD_PERSON_RIGHT_HAND")
 end
 
 if (host:isHost()) then
     local eventOldItemId
-    function events.tick()
+    function events.render()
         if (sheathOption) then
-            if (world.getTime() % 20 ~= 0) then
-                return
-            end
-
             -- Sync item id and damage value
             local itemInFirst = host:getSlot(0)
             local itemInFirstStack = itemInFirst:toStackString()
 
             local itemID
-            local damage = itemInFirst["tag"]["Damage"]
+            local customModelData = itemInFirst["tag"]["CustomModelData"]
 
-            if (damage ~= nil or itemInFirst.id == "minecraft:stick") then
-                if (damage ~= nil) then
-                    itemID = itemInFirst.id.."{Damage:"..damage..",Unbreakable:1}"
-                else
-                    itemID = itemInFirst.id
-                end
+            if (customModelData ~= nil) then
+                itemID = itemInFirst.id.."{CustomModelData:"..customModelData.."}"
+                local classItem = CheckClassItem(itemInFirstStack)
 
-                -- Edit scale and rotation depending on its damage value
-                if (CheckClassItem(itemInFirstStack) == "Warrior/Knight") then
-                    task:setPos(0, 17, 4)
-                    task:setScale(1.5, 1.5, 1.5)
-                    task:setRot(-20, 20, 100)
-
-                    if (IsBetweenXY(damage, 0, 1)) then         -- neutral
-                        task:setPos(0, 18, 4);
-                    elseif (IsBetweenXY(damage, 5, 7)) then     -- thunder
-                        task:setPos(0, 18, 4)
-                    elseif (IsBetweenXY(damage, 8, 9)) then    -- fire
-                        task:setPos(0, 17, 3.5)
-                    elseif (damage == 10) then
-                        task:setPos(0, 17, 4)
-                    elseif (damage == 12) then                  -- air
-                        task:setPos(0, 17, 5.5)
-                        task:setScale(2.25, 2.25, 2.25)
-                    elseif (damage == 13) then
-                        task:setPos(0, 16, 5)
-                        task:setScale(2.25, 2.25, 2.25)
-                        task:setRot(-20, 20, 100)
-                    elseif (damage == 14) then                  -- water
-                        task:setPos(0,18, 2)
-                        task:setScale(2.5, 2.5, 2.5)
-                    elseif (IsBetweenXY(damage, 15, 16)) then
-                        task:setPos(0, 18, 3)
-                        task:setScale(2.5, 2.5, 2.5)
-                    elseif (IsBetweenXY(damage, 17, 19)) then   -- rainbow
-                        task:setPos(0, 18, 3)
-                        task:setScale(2.5, 2.5, 2.5)
+                -- Edit scale and rotation depending on its customModelData value
+                if (classItem == "Warrior/Knight") then  -- (data = 445->507)
+                    if (NumInArray(customModelData, {448, 449, 470, 473, 476})) then
+                        -- Scythe
+                        task:setPos(0, 15, 4)
+                        task:setRot(0, 270, 50)
+                        if (customModelData == 449) then -- Air Scythe
+                            task:setPos(5, 15, 4)
+                        end
+                    elseif (NumInArray(customModelData, {475, 482, 488, 494, 497, 498, 502, 505})) then
+                        -- Sword
+                        task:setPos(5, 25, 4)
+                        task:setRot(0, 90, 135)
                     else
-                        task:setPos(0, 17, 4)
-                        task:setScale(1.5, 1.5, 1.5)
-                        task:setRot(-20, 20, 100)
-                    end
-                elseif (CheckClassItem(itemInFirstStack) == "Mage/Dark Wizard") then
-                    task:setPos(0, 16.5, 4)
-                    task:setScale(1.5, 1.5, 1.5)
-                    task:setRot(-15, 15, 105)
-
-                    if (itemInFirst.id == "minecraft:stick" or damage == 1) then -- neutral
-                        task:setPos(0, 18, 3)
-                        task:setScale(1.25, 1.25, 1.25)
-                        task:setRot(-20, 20, 100)
-                    else
-                        task:setPos(0, 16.5, 4)
-                        task:setScale(1.5, 1.5, 1.5)
-                        task:setRot(-15, 15, 105)
-                    end
-                elseif (CheckClassItem(itemInFirstStack) == "Assassin/Ninja") then
-                    task:setPos(0, 19, 3.5)
-                    task:setScale(1, 1, 1)
-                    task:setRot(160, 25, -10)
-
-                    if (IsBetweenXY(damage, 0, 1)) then         -- neutral
-                        task:setPos(5, 12, 0)
-                        task:setScale(0.9, 0.9, 0.9)
-                        task:setRot(70, 0, 120)
-                    elseif (damage == 2) then                   -- earth
-                        task:setPos(1, 21, 3.5)
-                        task:setRot(160, -10, -10)
-                    elseif (IsBetweenXY(damage, 3, 4)) then
-                    elseif (damage == 5) then                   -- thunder
-                        task:setPos(2, 20, 2.5)
-                        task:setRot(160, -10, -10)
-                    elseif (IsBetweenXY(damage, 6, 7)) then
-                        task:setRot(160, -10, -10)
-                    elseif (damage == 8) then                   -- fire
-                        task:setPos(0, 19, 2.5)
-                    elseif (damage == 12) then                   -- air
-                        task:setPos(0, 19, 2)
-                    elseif (damage == 13) then
-                        task:setScale(1.25, 1.25, 1.25)
-                        task:setPos(0, 18, 4.5)
-                    elseif (damage == 14) then                  -- water
-                        task:setPos(-2, 19, 1)
-                        task:setRot(160, 25, -20)
-                    elseif (IsBetweenXY(damage, 15, 16)) then
-                        task:setPos(-2, 19, 2)
-                        task:setRot(160, 25, -20)
-                    elseif (damage == 17) then                  -- rainbow
-                        task:setScale(1.25, 1.25, 1.25)
-                        task:setPos(0, 19, 1.5)
-                    elseif (damage == 18) then
-                        task:setScale(1.25, 1.25, 1.25)
-                        task:setPos(-1, 20, 1.5)
-                    elseif (damage == 19) then
-                        task:setScale(1.25, 1.25, 1.25)
-                        task:setPos(2, 20, 3.5)
-                    else
-                        task:setPos(0, 19, 3.5)
-                        task:setScale(1, 1, 1)
-                        task:setRot(160, 25, -10)
-                    end
-                elseif (CheckClassItem(itemInFirstStack) == "Archer/Hunter") then
-                    task:setPos(0, 18, 2.75)
-                    task:setScale(1.5, 1.5, 1.5)
-                    task:setRot(-25, 200, 70)
-
-                    if (IsBetweenXY(damage, 0, 1)) then         -- neutral
-                        task:setScale(1.25, 1.25, 1.25)
-                        task:setRot(-12, 210, 80)
-                    elseif (IsBetweenXY(damage, 2, 4)) then     -- earth
-                        task:setPos(0, 25, 11)
-                        task:setScale(1.25, 1.25, 1.25)
-                        task:setRot(-40, 190, -190)
-                    elseif (damage == 5) then                   -- thunder
-                        task:setPos(0, 18, 2)
-                    elseif (IsBetweenXY(damage, 6, 7)) then
-                        task:setPos(0, 18, 1.5)
-                    elseif (IsBetweenXY(damage, 8, 10)) then    -- fire
-                        task:setPos(0, 18, 6.5)
-                        task:setRot(-5, 200, 70)
-                    elseif (damage == 12 or damage == 13) then  -- air
-                        task:setPos(4, 20, 2.75)
-                        task:setRot(-25, 200, 50)
-                    elseif (damage == 18 or damage == 19) then  -- rainbow
-                        task:setPos(4, 20, 2.75)
-                        task:setRot(-25, 200, 50)
-                    else
-                        task:setPos(0, 18, 2.75)
-                        task:setScale(1.5, 1.5, 1.5)
-                        task:setRot(-25, 200, 70)
-                    end
-                elseif (CheckClassItem(itemInFirstStack) == "Shaman/Skyseer") then
-                    task:setPos(0, 20, 4)
-                    task:setScale(1, 1, 1)
-                    task:setRot(-25, 200, 170)
-
-                    if (damage == 11) then                      -- earth
-                        task:setScale(1.15, 1.15, 1.15)
-                    elseif (damage == 14) then                  -- thunder
-                        task:setScale(1.15, 1.15, 1.15)
-                    elseif (IsBetweenXY(damage, 16, 17)) then   -- fire
-                        task:setScale(1.15, 1.15, 1.15)
-                    elseif (damage == 20) then                  -- air
-                        task:setScale(1.15, 1.15, 1.15)
-                    elseif (IsBetweenXY(damage, 21, 23)) then   -- water
-                        task:setPos(0, 20, 3.5)
-                        task:setScale(1.15, 1.15, 1.15)
-                        task:setRot(-20, 200, 170)
-                    elseif (IsBetweenXY(damage, 24, 26)) then   -- rainbow
-                        task:setScale(1.15, 1.15, 1.15)
-                    else
+                        -- Spear
                         task:setPos(0, 20, 4)
-                        task:setScale(1, 1, 1)
-                        task:setRot(-25, 200, 170)
+                        task:setRot(0, 90, 125)
+                        if (customModelData == 503) then
+                            task:setPos(0, 20, 5)
+                        end
+                    end
+                elseif (classItem == "Mage/Dark Wizard") then  -- (data = 312->378)
+                    if (NumInArray(customModelData, {323, 326, 335, 344, 349, 350, 357, 363, 366, 374})) then
+                        -- Short Wand
+                        task:setPos(5, 25, 4)
+                        task:setRot(0, 90, 135)
+                        if (customModelData == 366) then -- Lantern Wand
+                            task:setPos(-3, 18, 4)
+                            task:setRot(0, 270, 57)
+                        end
+                    else
+                        -- Wand
+                        task:setPos(0, 20, 4)
+                        task:setRot(0, 90, 125)
+                    end
+                elseif (classItem == "Assassin/Ninja") then  -- (data = 246->311)
+                    if (NumInArray(customModelData, {246, 247, 254, 267, 270, 285, 289, 298, 305})) then
+                        -- Short Dagger
+                        task:setPos(4.9, 12, -2)
+                        task:setRot(120, 0, 0)
+                        if (customModelData == 267) then -- Enchanted Dagger
+                            task:setPos(3, 25, 4)
+                            task:setRot(90, 80, 233)
+                        elseif (customModelData == 270) then -- Nunchucks
+                            task:setPos(4.5, 8, -2)
+                            task:setRot(30, 0, 0)
+                        elseif (customModelData == 289) then -- Pan
+                            task:setPos(5, 25, 5)
+                            task:setRot(0, 0, 130)
+                        elseif (customModelData == 298) then -- Saxaphone
+                            task:setPos(0, 20, 6)
+                            task:setRot(45, 88, 0)
+                        elseif (customModelData == 305) then -- Enchanted Sword
+                            task:setPos(5, 25, 5)
+                        task:setRot(0, 80, 135)
+                        end
+                    elseif (NumInArray(customModelData, {251, 252, 253, 257, 258, 259, 268, 279, 301, 311})) then
+                        -- Front Claw
+                        task:setPos(0, 20, 5.5)
+                        task:setRot(90, 0, 320)
+                    elseif (NumInArray(customModelData, {291, 297, 308})) then
+                        -- Side Claw
+                        task:setPos(0, 18, 5.5)
+                        task:setRot(90, 90, 320)
+                        if (customModelData == 308) then -- Tesla Claw
+                            task:setPos(3, 18, 4.8)
+                            task:setRot(90, 80, 320)
+                        end
+                    else
+                        -- Dagger
+                        task:setPos(5, 25, 4)
+                        task:setRot(0, 90, 130)
+                    end
+                elseif (classItem == "Archer/Hunter") then  -- (data = 182->245)
+                    if (NumInArray(customModelData, {187, 188, 189, 204, 206, 213, 234, 240, 243})) then
+                        -- Crossbows
+                        task:setPos(3, 20, 4)
+                        task:setRot(90, 0, 315)
+                        if (customModelData == 206) then -- Boltslinger Repeater
+                            task:setPos(1, 23, 4)
+                            task:setRot(110, 0, 315)
+                        elseif (customModelData == 213) then -- Crimson Crossbow
+                            task:setRot(100, 0, 315)
+                        elseif (customModelData == 240) then -- Spectral Crossbow
+                            task:setRot(80, 0, 315)
+                        elseif (customModelData == 243) then -- Slingshot
+                            task:setPos(6.5, 10, 0)
+                            task:setRot(0, 90, 0)
+                        end
+                    elseif (NumInArray(customModelData, {209, 211, 232, 236, 239})) then
+                        -- Hand Cannon
+                        task:setPos(3, 23, 4)
+                        task:setRot(90, 0, 315)
+                        if (customModelData == 209) then -- Brawler Blunderbuss
+                            task:setPos(2, 22, 4)
+                            task:setRot(110, 0, 325)
+                        elseif (customModelData == 232) then -- Flamethrower
+                            task:setPos(-1, 18, 4)
+                            task:setRot(-90, 0, 135)
+                        elseif (customModelData == 211) then -- Flame Cannon
+                            task:setRot(-90, 0, 135)
+                        end
+                    elseif (NumInArray(customModelData, {203, 215, 216, 219, 220, 228, 230, 233, 237, 238, 245})) then
+                        -- Long Bow
+                        task:setPos(3, 18, 4)
+                        task:setRot(25, 90, 340)
+                        if (customModelData == 219 or customModelData == 220 or customModelData == 228) then -- Dusack/Banana/Spiral
+                            task:setPos(3, 16, 4)
+                        elseif (customModelData == 233) then -- Harp
+                            task:setPos(6, 14, 4)
+                        elseif (customModelData == 237 or customModelData == 245) then -- Futuristic/Tropical
+                            task:setPos(1, 16, 4)
+                            task:setRot(25, 90, 330)
+                        end
+                    else
+                        -- Bows
+                        task:setPos(6, 17.5, 4)
+                        task:setRot(25, 90, 340)
+                    end
+                elseif (classItem == "Shaman/Skyseer") then -- (data = 379->444)
+                    if (NumInArray(customModelData, {403, 415, 433, 435, 438, 440, 442, 444})) then
+                        -- Lantern
+                        task:setPos(5, 16, 0)
+                        task:setRot(0, 90, -30)
+                        if (customModelData == 415) then -- Dynasty Fan 
+                            task:setPos(4, 23, 4)
+                            task:setRot(0, 65, 140)
+                        elseif (customModelData == 433) then -- Pan Pipes
+                            task:setPos(5, 14, -1)
+                            task:setRot(0, 0, 0)
+                        elseif (customModelData == 435) then -- Ritualist Focus
+                            task:setPos(-3, 15, 4)
+                            task:setRot(0, 270, 60)
+                        elseif (customModelData == 440) then -- Summoner's Marionette
+                            task:setPos(2, 19, 5)
+                            task:setRot(0, 280, 65)
+                        elseif (customModelData == 442 or customModelData == 444) then -- Voodoo Dolls
+                            task:setPos(3, 15, 5)
+                            task:setRot(10, 280, 0)
+                        end
+                    else
+                        -- Relik
+                        task:setPos(4, 20, 4)
+                        task:setRot(0, 270, 135)
+                        if (NumInArray(customModelData, {421, 422, 424, 427, 428})) then -- Hand Offset Models
+                            task:setPos(4, 20, 2)
+                            task:setRot(0, 270, 135)
+                        end
                     end
                 end
-            else
-                itemID = itemInFirst.id
+
+                -- Hand Offset Models
+                if (NumInArray(customModelData, {202, 221, 224, 225, 227, 230, 231, 274, 282, 286, 290, 293, 296, 333, 352, 355, 356, 358, 361, 362, 465, 483, 486, 487, 489, 492, 493, 505})) then
+                    task:setPos(task:getPos().x, task:getPos().y, 6)
+                end
             end
 
             -- ping only when item has changed
@@ -1324,13 +1308,13 @@ if (host:isHost()) then
             pings.updateWeaponClass(hasClassStr)
 
             -- Sync item task vectors
-            pings.updateWeaponTask(task:getRot()[1], task:getRot()[2], task:getRot()[3], task:getPos()[1], task:getPos()[2], task:getPos()[3], task:getScale()[1], task:getScale()[2], task:getScale()[3])
+            pings.updateWeaponTask(task:getRot()[1], task:getRot()[2], task:getRot()[3], task:getPos()[1], task:getPos()[2], task:getPos()[3])
         end
     end
 
     -- Sync selected slot
     function events.MOUSE_SCROLL(delta)
-        if (not player:isLoaded()) then
+        if (not player:isLoaded() or host:getScreen() ~= nil or isActionWheelOpen) then
             return
         end
 
@@ -1383,7 +1367,6 @@ function events.tick()
                 task:setItem(syncedItemID)
                 task:setRot(taskRotation)
                 task:setPos(taskPosition)
-                task:setScale(taskScale)
             else
                 task:setItem("minecraft:air")
             end
@@ -1406,24 +1389,118 @@ end
 
 -- Action Wheel =========================================================================================
 
-function pings.actionDance()
-    AnimIdling3:play()
-end
-
 function SheathWeapon(bool)
     sheathOption = bool
 end
 pings.actionSheath = SheathWeapon
 
-function pings.actionEmoteTemp(setting)
-    -- AnimIdling1:play()
-    print("Temp")
+function IdleAnimation(bool)
+    idleAnimations = bool
+end
+pings.actionIdleAnims = IdleAnimation
+
+function pings.taunt1Dance()
+    StopAllIdle()
+    AnimTaunt1:play()
+end
+
+function pings.taunt2Nod()
+    Rand = math.random(0,1)
+    if (Rand == 0) then
+        AnimTaunt2b:stop()
+        AnimTaunt2a:restart()
+    else
+        AnimTaunt2a:stop()
+        AnimTaunt2b:restart()
+    end
+end
+
+function pings.taunt3JumpingJacks()
+    StopAllIdle()
+    AnimTaunt3:play()
+end
+
+function pings.taunt4Inspect()
+    StopAllIdle()
+    AnimTaunt4:play()
+end
+
+function pings.taunt5KickDirt()
+    StopAllIdle()
+    AnimIdling1:play()
+end
+
+function pings.taunt6Look()
+    StopAllIdle()
+    AnimIdling2:play()
+end
+
+function pings.taunt7Wait()
+    StopAllIdle()
+    AnimIdling3:play()
 end
 
 local mainPage = action_wheel:newPage("Taunts")
+local settingPage = action_wheel:newPage("Settings")
 action_wheel:setPage(mainPage)
 
-local setting1 = mainPage:newAction()
+local toSettings = mainPage:newAction()
+    :title("Go to settings")
+    :item("minecraft:writable_book")
+    :onLeftClick(function()
+    action_wheel:setPage(settingPage)
+end)
+
+local toTaunts = settingPage:newAction()
+    :title("Go to Taunts")
+    :item("minecraft:writable_book")
+    :onLeftClick(function()
+    action_wheel:setPage(mainPage)
+end)
+
+local taunt1 = mainPage:newAction()
+    :title("Dance")
+    :item("minecraft:music_disc_chirp")
+    :hoverColor(1, 1, 1)
+    :onLeftClick(pings.taunt1Dance)
+
+local taunt2 = mainPage:newAction()
+    :title("Nod")
+    :item("minecraft:player_head")
+    :hoverColor(1, 1, 1)
+    :onLeftClick(pings.taunt2Nod)
+
+local taunt3 = mainPage:newAction()
+    :title("Jumping Jacks")
+    :item("minecraft:feather")
+    :hoverColor(1, 1, 1)
+    :onLeftClick(pings.taunt3JumpingJacks)
+
+local taunt4 = mainPage:newAction()
+    :title("Inspect Item")
+    :item("minecraft:experience_bottle")
+    :hoverColor(1, 1, 1)
+    :onLeftClick(pings.taunt4Inspect)
+
+local taunt5 = mainPage:newAction()
+    :title("Boredom")
+    :item("minecraft:enchanted_book")
+    :hoverColor(1, 1, 1)
+    :onLeftClick(pings.taunt5KickDirt)
+
+local taunt6 = mainPage:newAction()
+    :title("Look Around")
+    :item("minecraft:ender_eye")
+    :hoverColor(1, 1, 1)
+    :onLeftClick(pings.taunt6Look)
+
+local taunt7 = mainPage:newAction()
+    :title("Wait")
+    :item("minecraft:clock")
+    :hoverColor(1, 1, 1)
+    :onLeftClick(pings.taunt7Wait)
+
+local setting1 = settingPage:newAction()
     :title("Enable Sheath")
     :toggleTitle("Disable Sheath")
     :item("minecraft:diamond_sword")
@@ -1431,44 +1508,15 @@ local setting1 = mainPage:newAction()
     :onToggle(pings.actionSheath)
     :toggled(sheathOption)
 
-local emote1 = mainPage:newAction()
-    :title("Dance")
-    :item("minecraft:music_disc_chirp")
+local setting2 = settingPage:newAction()
+    :title("Enable Idle Animations")
+    :toggleTitle("Disable Idle Animations")
+    :item("minecraft:armor_stand")
     :hoverColor(1, 1, 1)
-    :onLeftClick(pings.actionDance)
+    :onToggle(pings.actionIdleAnims)
+    :toggled(idleAnimations)
 
-local emote2 = mainPage:newAction()
-    :title("placeholder2")
-    :item("minecraft:music_disc_11")
-    :hoverColor(1, 1, 1)
-    -- :onLeftClick(pings.actionEmoteTemp)
-
-local emote3 = mainPage:newAction()
-    :title("placeholder3")
-    :item("minecraft:music_disc_11")
-    :hoverColor(1, 1, 1)
-    -- :onLeftClick(pings.actionEmoteTemp)
-
-local emote4 = mainPage:newAction()
-    :title("placeholder4")
-    :item("minecraft:music_disc_11")
-    :hoverColor(1, 1, 1)
-    -- :onLeftClick(pings.actionEmoteTemp)
-
-local emote5 = mainPage:newAction()
-    :title("placeholder5")
-    :item("minecraft:music_disc_11")
-    :hoverColor(1, 1, 1)
-    -- :onLeftClick(pings.actionEmoteTemp)
-
-local emote6 = mainPage:newAction()
-    :title("placeholder6")
-    :item("minecraft:music_disc_11")
-    :hoverColor(1, 1, 1)
-    -- :onLeftClick(pings.actionEmoteTemp)
-
-local emote6 = mainPage:newAction()
-    :title("placeholder7")
-    :item("minecraft:music_disc_11")
-    :hoverColor(1, 1, 1)
-    -- :onLeftClick(pings.actionEmoteTemp)
+local setting3 = settingPage:newAction()
+local setting4 = settingPage:newAction()
+local setting5 = settingPage:newAction()
+local setting6 = settingPage:newAction()
