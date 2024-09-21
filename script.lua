@@ -1,59 +1,70 @@
 -- ///////////////////////////////////////////////////////////////// --
 --                          Wynn Extra Bends
 --                              Vance568
---                               v1.1
+--                               v1.2
 --
---               Helper Library Authors: Squishy, Katt962
+--   Helper Library Authors: Jimmy H., GrandpaScout, Squishy, Katt962
 -- ///////////////////////////////////////////////////////////////// --
 
 local squapi = require("SquAPI")
 local squassets = require("SquAssets")
+local GSBlend = require("GSAnimBlend")
+
+local anims = require('JimmyAnims')
+anims.excluBlendTime = 2
+anims.incluBlendTime = 2
+anims.autoBlend = true
+anims.dismiss = false
+anims.oneJump(true)
+anims.addExcluAnimsController(animations.model["freeFall"])
+anims.addIncluAnimsController(animations.model["Taunt_2"], animations.model["Taunt_3"])
+anims.addAllAnimsController()
+anims(animations.model)
 
 -- Hide vanilla model
 vanilla_model.PLAYER:setVisible(false)
 
--- Get model type
-function events.entity_init() --=====================================================================================================================
-    if (player:getModelType() == "DEFAULT") then
-        models.model.Player.Upper.body.Arms.Arm_L.Bicep_Default_L:setVisible(true)
-        models.model.Player.Upper.body.Arms.Arm_L.Bicep_Slim_L:setVisible(false)
-        models.model.Player.Upper.body.Arms.Arm_L.Elbow_L.Limb_Default_L:setVisible(true)
-        models.model.Player.Upper.body.Arms.Arm_L.Elbow_L.Limb_Slim_L:setVisible(false)
+-- Global Variables =====================================================================================
 
-        models.model.Player.Upper.body.Arms.Arm_R.Bicep_Default_R:setVisible(true)
-        models.model.Player.Upper.body.Arms.Arm_R.Bicep_Slim_R:setVisible(false)
-        models.model.Player.Upper.body.Arms.Arm_R.Elbow_R.Limb_Default_R:setVisible(true)
-        models.model.Player.Upper.body.Arms.Arm_R.Elbow_R.Limb_Slim_R:setVisible(false)
-    else
-        models.model.Player.Upper.body.Arms.Arm_L.Bicep_Default_L:setVisible(false)
-        models.model.Player.Upper.body.Arms.Arm_L.Bicep_Slim_L:setVisible(true)
-        models.model.Player.Upper.body.Arms.Arm_L.Elbow_L.Limb_Default_L:setVisible(false)
-        models.model.Player.Upper.body.Arms.Arm_L.Elbow_L.Limb_Slim_L:setVisible(true)
-
-        models.model.Player.Upper.body.Arms.Arm_R.Bicep_Default_R:setVisible(false)
-        models.model.Player.Upper.body.Arms.Arm_R.Bicep_Slim_R:setVisible(true)
-        models.model.Player.Upper.body.Arms.Arm_R.Elbow_R.Limb_Default_R:setVisible(false)
-        models.model.Player.Upper.body.Arms.Arm_R.Elbow_R.Limb_Slim_R:setVisible(true)
-    end
-end
-
--- global vars ==========================================================================================
+-- Pinged/Synced Values
+local oldWeaponClass
+local weaponClass
+local isActionWheelOpen
+local wheelCheck
+local oldWheelCheck
 
 -- Settings
 local sheathOption = true;
 local idleAnimations = true;
 
 -- Animation states/ticks
-local state
-local oldState
-local randAnim
-local rightWasPressed
+local idleTick = 0
 local randTick = 400
+local randAnim
+
+local rightLeg = false
+local wasSprintJup = false
+local wasSprintJDown = false
+local isSprintJup
+local isSprintJDown
+
 local fallTimer = 0
 local startFallTime = 0
 local startedFall = false
-local idleTick = 0
-local jump = false
+local yVel = 0
+local oldYVel = 0
+
+local facing
+local oldFacing
+
+local blendClimb = true
+local blendClimbDone = false
+local climbBlendInRot
+local climbBlendOutRot
+
+local blendClimbTop = false
+local climbTopBlendInRot
+local climbTopBlendOutRot
 
 -- BlockBench model parts
 local pModel = models.model.Player
@@ -62,82 +73,155 @@ local modelMainBody = pModel.Upper
 local modelRightArm = pModel.Upper.body.Arms.Arm_R
 local modelLeftArm = pModel.Upper.body.Arms.Arm_L
 
+-- Get model type
+function events.entity_init() --=====================================================================================================================
+    if (player:getModelType() == "DEFAULT") then
+        modelLeftArm.Bicep_Default_L:setVisible(true)
+        modelLeftArm.Bicep_Slim_L:setVisible(false)
+        modelLeftArm.Elbow_L.Limb_Default_L:setVisible(true)
+        modelLeftArm.Elbow_L.Limb_Slim_L:setVisible(false)
+
+        modelRightArm.Bicep_Default_R:setVisible(true)
+        modelRightArm.Bicep_Slim_R:setVisible(false)
+        modelRightArm.Elbow_R.Limb_Default_R:setVisible(true)
+        modelRightArm.Elbow_R.Limb_Slim_R:setVisible(false)
+    else
+        modelLeftArm.Bicep_Default_L:setVisible(false)
+        modelLeftArm.Bicep_Slim_L:setVisible(true)
+        modelLeftArm.Elbow_L.Limb_Default_L:setVisible(false)
+        modelLeftArm.Elbow_L.Limb_Slim_L:setVisible(true)
+
+        modelRightArm.Bicep_Default_R:setVisible(false)
+        modelRightArm.Bicep_Slim_R:setVisible(true)
+        modelRightArm.Elbow_R.Limb_Default_R:setVisible(false)
+        modelRightArm.Elbow_R.Limb_Slim_R:setVisible(true)
+    end
+end
+
 -- Set players skin to their own skin
 pModel:setPrimaryTexture("SKIN")
 
 -- Basic Action Animations ==============================================================================
-AnimIdle = animations.model["Idle_0"]
+AnimIdle = animations.model["idle"]
 AnimIdling1 = animations.model["Idle_1"]
+AnimIdling1:blendTime(2, 4)
 AnimIdling2 = animations.model["Idle_2"]
+AnimIdling2:blendTime(2, 4)
 AnimIdling3 = animations.model["Idle_3"]
+AnimIdling3:blendTime(2, 4)
 
-AnimWalk = animations.model["Walking"]
-AnimCrouching = animations.model["Crouch_0"]
-AnimCrouch = animations.model["Crouch_1"]
-AnimUnCrouch = animations.model["Crouch_2"]
-AnimCrouchWalk = animations.model["Sneaking"]
+AnimWalk = animations.model["walk"]
+AnimCrouching = animations.model["crouch"]
+AnimCrouching:blendTime(4)
+AnimUnCrouchJUp = animations.model["crouchjumpup"]
+AnimUnCrouchJUp:blendTime(4)
+AnimCrouchJDown = animations.model["crouchjumpdown"]
+AnimCrouchJDown:blendTime(5)
+AnimCrouchWalk = animations.model["crouchwalk"]
+AnimCrouchWalk:blendTime(4)
 
-AnimCrawl = animations.model["Crawl_Still"]
-AnimCrawling = animations.model["Crawling"]
+AnimCrawl = animations.model["crawlstill"]
+AnimCrawling = animations.model["crawl"]
 
-AnimFloat = animations.model["Float"]
-AnimSwim = animations.model["Swim_0"]
+AnimFloat = animations.model["water"]
+AnimFloat:blendTime(4)
+AnimSwim = animations.model["swim"]
+AnimSwim:blendTime(4)
 
-AnimClimb = animations.model["Climbing"]
-AnimClimbHold = animations.model["Climb_Hold"]
+AnimClimb = animations.model["climb"]
+AnimClimb:blendTime(4)
+AnimClimbCrouch = animations.model["climbcrouch"]
+AnimClimbCrouch:blendTime(4)
+AnimClimbCrouchWalk = animations.model["climbcrouchwalk"]
+AnimClimbCrouchWalk:blendTime(4)
 
-AnimJumping = animations.model["Jump_0"]
-AnimJump = animations.model["Jump_1"]
-AnimJumpLand = animations.model["Jump_2"]
-AnimJumpMove1 = animations.model["Sprint_Jump_1"]
-AnimJumpMoveStop1 = animations.model["Sprint_Jump_2"]
-AnimJumpMove2 = animations.model["Sprint_Jump_3"]
-AnimJumpMoveStop2 = animations.model["Sprint_Jump_4"]
-AnimCrouchJumping = animations.model["Crouch_3"]
+AnimJumpingUp = animations.model["jumpup"]
+AnimJumpingUp:blendTime(4, 5)
+AnimJumpingUp:onBlend("easeOutQuad")
+AnimJumpingDown = animations.model["jumpdown"]
+AnimJumpingDown:blendTime(4, 5)
+AnimJumpingDown:onBlend("easeOutQuad")
+AnimSprintJumpUp = animations.model["sprintjumpup"]
+AnimSprintJumpUp:blendTime(4.5)
+AnimSprintJumpDown = animations.model["sprintjumpdown"]
+AnimSprintJumpDown:blendTime(4.5, 2)
 
 AnimShortFalling = animations.model["Fall_0"]
-AnimFall = animations.model["Fall_1"]
-AnimShortLand = animations.model["Fall_2"]
-AnimFalling = animations.model["Falling"]
-AnimFallLand = animations.model["Land"]
+AnimShortFalling:blendTime(2)
+-- AnimFalling = animations.model["fall"]
+-- AnimFalling:blendTime(4, 0.25)
+AnimFreeFalling = animations.model["freeFall"]
+AnimFreeFalling:blendTime(4, 3)
+AnimLand = animations.model["land"]
+AnimLand:blendTime(1)
 
-AnimSprint = animations.model["Sprinting"]
+AnimSprint = animations.model["sprint"]
 
-AnimSit = animations.model["Sit"]
-AnimHorseSit = animations.model["Horse_Sitting"]
-AnimHorseRiding = animations.model["Horse_Riding"]
+AnimSit = animations.model["sitpass"]
+AnimHorseSit = animations.model["sit"]
+AnimHorseRiding = animations.model["sitmove"]
 
 AnimTaunt1 = animations.model["Taunt_1"]
 AnimTaunt2a = animations.model["Taunt_2"]
 AnimTaunt2b = animations.model["Taunt_3"]
 AnimTaunt3 = animations.model["Taunt_4"]
 AnimTaunt4 = animations.model["Taunt_5"]
+AnimTaunt1:blendTime(3, 4)
+AnimTaunt2a:blendTime(2, 4)
+AnimTaunt2b:blendTime(2, 4)
+AnimTaunt3:blendTime(2, 4)
+AnimTaunt4:blendTime(2, 4)
 
 -- Attacks ----------------------------------------------------------
 
-AnimPunch = animations.model["Punch"]
+AnimPunch = animations.model["attackR"]
+AnimPunch:blendTime(1)
+AnimMine = animations.model["mineR"]
+AnimMine:blendTime(1)
+AnimSwordSwing = animations.model["ID_sword_attackR"]
+AnimBowShootHold = animations.model["bowR"]
+AnimCrossBowLoad = animations.model["loadR"]
+AnimCrossBowHold = animations.model["crossbowR"]
 
 -- Warrior ------
+WarriorSwung = animations.model["Name_Warrior/Knight_attackR"]
+WarriorMine = animations.model["Name_Warrior/Knight_mineR"]
 WarriorSwing1 = animations.model["Spear_Swing_1"]
 WarriorSwing2 = animations.model["Spear_Swing_2"]
 WarriorSwing3 = animations.model["Spear_Swing_3"]
+WarriorSwing1:blendTime(1)
+WarriorSwing2:blendTime(1)
+WarriorSwing3:blendTime(1)
 
 -- Mage ---------
+MageSwung = animations.model["Name_Mage/Dark Wizard_attackR"]
+MageMine = animations.model["Name_Mage/Dark Wizard_mineR"]
 MageSwing1 = animations.model["Wand_Wave_1"]
 MageSwing2 = animations.model["Wand_Wave_2"]
 MageSwing3 = animations.model["Wand_Wave_3"]
+MageSwing1:blendTime(1)
+MageSwing2:blendTime(1)
+MageSwing3:blendTime(1)
 
 -- Assassin -----
+AssassinSwung = animations.model["Name_Assassin/Ninja_attackR"]
+AssassinMine = animations.model["Name_Assassin/Ninja_mineR"]
 AssassinSwing1 = animations.model["Sword_Swing_1"]
 AssassinSwing2 = animations.model["Sword_Swing_2"]
 AssassinSwing3 = animations.model["Sword_Swing_3"]
+AssassinSwing1:blendTime(1)
+AssassinSwing2:blendTime(1)
+AssassinSwing3:blendTime(0)
 
 -- Shaman -------
+ShamanSwung = animations.model["Name_Shaman/Skyseer_attackR"]
+ShamanMine = animations.model["Name_Shaman/Skyseer_mineR"]
 ShamanSwing = animations.model["Relik_Strike"]
+ShamanSwing:blendTime(1)
 
 -- Archer -------
 ArcherShoot = animations.model["Bow_Shoot"]
-ArcherShootHold = animations.model["Bow_Shoot_Hold"]
+ArcherShoot:blendTime(1)
 
 -- Wynncraft Spells -------------------------------------------------
 -- R1, L2, R3 = s1
@@ -182,129 +266,16 @@ kattArmor.Armor.Boots
       pModel.Lower.Leg_L.Knee_L.LeftBootArmor
     )
 
+-- Pings ================================================================================================
+function pings.syncHeldItemIsWeapon(strClass)
+    weaponClass = strClass
+end
+
+function pings.syncAcitonWheel(bool)
+    isActionWheelOpen = bool
+end
+
 -- Helper Functions =====================================================================================
-
--- Stop playing all animations pertaining to combat
-function StopAllSpell()
-    AnimR1:stop()
-    AnimR2:stop()
-    AnimL2:stop()
-
-    -- Warrior -----
-    WarriorSwing1:stop()
-    WarriorSwing2:stop()
-    WarriorSwing3:stop()
-
-    -- Mage -----
-    MageSwing1:stop()
-    MageSwing2:stop()
-    MageSwing3:stop()
-
-    -- Assassin -----
-    AssassinSwing1:stop()
-    AssassinSwing2:stop()
-    AssassinSwing3:stop()
-
-    -- Shaman -----
-    ShamanSwing:stop()
-
-    -- Archer -----
-    ArcherShoot:stop()
-
-    -- AnimFirstSpell:stop()
-    AnimSecondSpell:stop()
-    AnimThirdSpell:stop()
-    -- AnimMovement:stop()
-end
-
-function StopAllIdle()
-    AnimIdling1:stop()
-    AnimIdling2:stop()
-    AnimIdling3:stop()
-    AnimTaunt1:stop()
-    AnimTaunt3:stop()
-    AnimTaunt4:stop()
-end
-
--- Check if itemStack has a class identified with it
-function CheckClassItem(item)
-    if (item == nil) then
-        return(nil)
-    end
-
-    if (string.find(item, "Warrior/Knight") ~= nil) then
-        return("Warrior/Knight")
-    elseif (string.find(item, "Mage/Dark Wizard") ~= nil) then
-        return("Mage/Dark Wizard")
-    elseif (string.find(item, "Assassin/Ninja") ~= nil) then
-        return("Assassin/Ninja")
-    elseif (string.find(item, "Shaman/Skyseer") ~= nil) then
-        return("Shaman/Skyseer")
-    elseif (string.find(item, "Archer/Hunter") ~= nil) then
-        return("Archer/Hunter")
-    end
-    return(nil)
-end
-
--- Check if given number is in array
-function NumInArray(num, arr)
-    for i=1, #arr do
-        if (num == arr[i]) then
-            return true
-        end
-    end
-    return false
-end
-
--- Given what animations that need to play, check which one to play under certain conditions on a left click
-function CheckAnimToPlayLeftClick(r1, r2, l2, swing1, swing2, swingCombo, secondSpell, thirdSpell)
-    if (l2:isPlaying() and not secondSpell:isPlaying()) then        -- R1, L2, s2
-        StopAllSpell()
-        secondSpell:play()
-    elseif (r2:isPlaying() and not thirdSpell:isPlaying()) then    -- R1, R2, s3
-        StopAllSpell()
-        thirdSpell:play()
-    elseif (r1:isPlaying() and not l2:isPlaying()) then             -- R1, L2
-        l2:play()
-    elseif (swing2 ~= nil and swingCombo ~= nil) then
-        -- Three swing combo attack
-        if (swing2:isPlaying() and not swingCombo:isPlaying()) then
-            swing2:stop()
-            swingCombo:play()
-        elseif (swing1:isPlaying() and not swing2:isPlaying() and not swingCombo:isPlaying()) then
-            swing1:stop()
-            swing2:play()
-        elseif (not swing1:isPlaying() and not swing2:isPlaying() and not swingCombo:isPlaying()) then
-            swing1:play()
-        end
-    else
-        -- One swing attack
-        swing1:restart()
-    end
-end
-
--- Given what animations that need to play, check which one to play under certain conditions on a right click
-function CheckAnimToPlayRightClick(r1, r2, l2, firstSpell, movement)
-    if (l2:isPlaying() and not r2:isPlaying()) then                                         -- R1, L2, s1
-        StopAllSpell()
-        firstSpell:play()
-    elseif (r2:isPlaying() and not movement:isPlaying()) then                               -- R1, R2, Movement
-        StopAllSpell()
-        movement:play()
-    elseif (r1:isPlaying() and not r2:isPlaying()) then                                     -- R1, R2
-        r2:play()
-    elseif (not r1:isPlaying() and not r2:isPlaying() and not movement:isPlaying()) then    -- R1
-        r1:play()
-    end
-end
-
--- Given what animation to play, play it without interference of other animations and with small delay
-function PlaySpellWithDelay(spell)
-    StopAllSpell()
-    spell:setStartDelay(0.3)
-    spell:play()
-    spell:setStartDelay(0)
-end
 
 -- Better isGrounded function with small fence fix (curtosy of @Discord User: 4P5)
 local CLEARANCE = 0.1 -- How many blocks you can hover above the ground and still be considered touching it
@@ -349,19 +320,65 @@ local function isOnGround(entity)
     return false
 end
 
--- Given which jump to play, play that particular jump. returns next jump value
-function WhichJump(j1Anim, j2Anim)
-    if (jump) then
-        j1Anim:play()
-        pings.legJump(false)
-        return
+-- Stop All animations that require idling
+local function StopAllIdle()
+    AnimIdling1:stop()
+    AnimIdling2:stop()
+    AnimIdling3:stop()
+    AnimTaunt1:stop()
+    AnimTaunt3:stop()
+    AnimTaunt4:stop()
+end
+
+-- Is Player Taunting
+local function IsTaunting()
+    if (AnimTaunt1:isPlaying() or AnimTaunt3:isPlaying() or AnimTaunt4:isPlaying()) then
+        return true
     end
-    j2Anim:play()
-    pings.legJump(true)
+    return false
+end
+
+-- Check if itemStack has a class identified with it
+local function CheckClassItem(item)
+    if (item == nil) then
+        return(nil)
+    end
+
+    if (string.find(item, "Warrior/Knight") ~= nil) then
+        return("Warrior/Knight")
+    elseif (string.find(item, "Mage/Dark Wizard") ~= nil) then
+        return("Mage/Dark Wizard")
+    elseif (string.find(item, "Assassin/Ninja") ~= nil) then
+        return("Assassin/Ninja")
+    elseif (string.find(item, "Shaman/Skyseer") ~= nil) then
+        return("Shaman/Skyseer")
+    elseif (string.find(item, "Archer/Hunter") ~= nil) then
+        return("Archer/Hunter")
+    end
+    return(nil)
+end
+
+-- Given what animations that need to play, check which one to play under certain conditions on a left click
+local function CheckAnimToPlayLeftClick(swing1, swing2, swing3)
+    if (swing2 ~= nil and swing3 ~= nil) then
+        -- Three swing combo attack
+        if (swing2:isPlaying() and not swing3:isPlaying()) then
+            swing2:stop()
+            swing3:play()
+        elseif (swing1:isPlaying() and not swing2:isPlaying() and not swing3:isPlaying()) then
+            swing1:stop()
+            swing2:play()
+        elseif (not swing1:isPlaying() and not swing2:isPlaying() and not swing3:isPlaying()) then
+            swing1:play()
+        end
+    else
+        -- One swing attack
+        swing1:play()
+    end
 end
 
 -- Get random number between 400 and 600 that is also divisible by 80
-function GetRandIdleTick()
+local function GetRandIdleTick()
     local num = math.random(400, 600)
     while (num % 80 ~= 0) do
         num = math.random(400, 600)
@@ -369,314 +386,42 @@ function GetRandIdleTick()
     return(num)
 end
 
--- Stop playing all 'basic action' animations except animations given
-function stopBasicAnims(exceptionTable)
-    local animationTable = {AnimIdle, AnimWalk, AnimCrouching, AnimCrouchWalk, AnimSprint, AnimCrawl, AnimCrawling, AnimJumping, AnimShortFalling,
-                            AnimClimb, AnimClimbHold, AnimFloat, AnimSwim, AnimSit, AnimHorseSit, AnimHorseRiding, AnimCrouchJumping}
-    local isException
-    for i,anim in ipairs(animationTable) do
-        isException = false
-        for j,exception in ipairs(exceptionTable) do
-            if (anim == exception) then
-                isException = true
-            end
-        end
-
-        if (not isException) then
-            anim:stop()
+-- Check if given number is in array
+local function NumInArray(num, arr)
+    for i=1, #arr do
+        if (num == arr[i]) then
+            return true
         end
     end
+    return false
 end
 
--- Get the priority of the animation currently playing
-function getAnimPriority()
-    local animationTable = {AnimJump, AnimJumpLand, AnimCrouch, AnimUnCrouch, AnimFall, AnimShortLand, AnimFallLand,
-                            AnimJumpMove1, AnimJumpMove2, AnimJumpMoveStop1, AnimJumpMoveStop2, AnimIdle, AnimCrouching,
-                            AnimCrouchWalk, AnimWalk, AnimSprint, AnimCrawl, AnimCrawling, AnimJumping, AnimCrouchJumping, AnimShortFalling,
-                            AnimFalling, AnimSwim, AnimFloat, AnimClimb, AnimClimbHold, AnimSit, AnimHorseSit, AnimHorseRiding}
-    for i,anim in ipairs(animationTable) do
-        if (anim == AnimIdle and anim:isPlaying() and not AnimCrouching:isPlaying()) then
-            return(anim:getPriority()+1)
-        elseif (anim:isPlaying()) then
-            return(anim:getPriority())
-        end
-    end
-    return(0)
+-- Reset Idle tick
+local function ResetIdle()
+    idleTick = 0
+    StopAllIdle()
 end
-
--- Host Synchronization Values ==========================================================================
-local weaponClass
-local isActionWheelOpen
-local oldWeaponClass
-local wheelCheck
-local oldWheelCheck
-
-function pings.syncHeldItemIsWeapon(strClass)
-    weaponClass = strClass
-end
-
-function pings.syncAcitonWheel(bool)
-    isActionWheelOpen = bool
-end
-
-function pings.legJump(bool)
-    jump = bool
-end
-
-function events.render(delta)
-    -- Is Action Wheel Open
-    wheelCheck = action_wheel:isEnabled()
-    if (wheelCheck ~= oldWheelCheck) then
-        pings.syncAcitonWheel(wheelCheck)
-    end
-    oldWheelCheck = wheelCheck
-
-    -- Held Item Wynncraft Class
-    local currItem = player:getHeldItem()
-    local currItemStack = currItem:toStackString()
-    local class = CheckClassItem(currItemStack)
-    if (class ~= oldWeaponClass) then
-        pings.syncHeldItemIsWeapon(class)
-    end
-    oldWeaponClass = class
-
-end
-
--- left-clicking detection ==============================================================================
-local hitKey = keybinds:of("Punch",keybinds:getVanillaKey("key.attack"))
-
-function pings.onHitDo()
-    if (not isActionWheelOpen) then
-
-        -- Spears --
-        if (weaponClass == "Warrior/Knight") then
-            CheckAnimToPlayLeftClick(AnimR1, AnimR2, AnimL2, WarriorSwing1, WarriorSwing2, WarriorSwing3, AnimSecondSpell, AnimThirdSpell)
-            return
-        end
-
-        -- Wands --
-        if (weaponClass == "Mage/Dark Wizard") then
-            CheckAnimToPlayLeftClick(AnimR1, AnimR2, AnimL2, MageSwing1, MageSwing2, MageSwing3, AnimSecondSpell, AnimThirdSpell)
-            return
-        end
-
-        -- Daggers --
-        if (weaponClass == "Assassin/Ninja" or string.find(player:getHeldItem():toStackString(), "sword") ~= nil) then
-            CheckAnimToPlayLeftClick(AnimR1, AnimR2, AnimL2, AssassinSwing1, AssassinSwing2, AssassinSwing3, AnimSecondSpell, AnimThirdSpell)
-            return
-        end
-
-        -- Reliks --
-        if (weaponClass == "Shaman/Skyseer") then
-            CheckAnimToPlayLeftClick(AnimR1, AnimR2, AnimL2, ShamanSwing, nil, nil, AnimSecondSpell, AnimThirdSpell)
-            return
-        end
-
-        -- Bows --
-        -- if (weaponClass == "Archer/Hunter") then
-        --     -- use opposite click for archer
-        --     CheckAnimToPlayRightClick(AnimR1, AnimR2, AnimL2, AnimFirstSpell, AnimMovement)
-        --     return
-        -- end
-
-        -- Holding none weapon --
-        AnimPunch:restart()
-    
-    end
-end
-
-hitKey.press = pings.onHitDo
 
 -- right-clicking detection =============================================================================
 local useKey = keybinds:of("Use",keybinds:getVanillaKey("key.use"))
-
 function pings.onRightClickDo()
+    ResetIdle()
+
     if (not isActionWheelOpen) then
-        -- local currItem = player:getHeldItem()
-        -- local currItemStack = currItem:toStackString()
-
-        -- -- Spears --
-        -- if (CheckClassItem(currItemStack) == "Warrior/Knight") then
-        --     CheckAnimToPlayRightClick(AnimR1, AnimR2, AnimL2, AnimFirstSpell, AnimMovement)
-        -- end
-
-        -- -- Wands --
-        -- if (CheckClassItem(currItemStack) == "Mage/Dark Wizard") then
-        --     CheckAnimToPlayRightClick(AnimR1, AnimR2, AnimL2, AnimFirstSpell, AnimMovement)
-        -- end
-
-        -- -- Daggers --
-        -- if (CheckClassItem(currItemStack) == "Assassin/Ninja") then
-        --     CheckAnimToPlayRightClick(AnimR1, AnimR2, AnimL2, AnimFirstSpell, AnimMovement)
-        -- end
-
-        -- -- Reliks --
-        -- if (CheckClassItem(currItemStack) == "Shaman/Skyseer") then
-        --     CheckAnimToPlayRightClick(AnimR1, AnimR2, AnimL2, AnimFirstSpell, AnimMovement)
-        -- end
-
-        -- Bows --
         if (weaponClass == "Archer/Hunter") then
-            -- use opposite click for archer
-            CheckAnimToPlayLeftClick(AnimR1, AnimR2, AnimL2, ArcherShoot, nil, nil, AnimSecondSpell, AnimThirdSpell)
-        end -- hold down button to attack?
-
+            CheckAnimToPlayLeftClick(ArcherShoot)
+        end
     end
 end
-
 useKey.press = pings.onRightClickDo
-
--- Key Bind detection (wynntils macros) =================================================================
-
--- function pings.onZPressDo()
---     local currItem = player:getHeldItem()
---     local currItemStack = currItem:toStackString()
-
---     if (string.find(currItemStack, "Warrior/Knight") ~= nil) then
---         PlaySpellWithDelay(AnimFirstSpell)
---     elseif (string.find(currItemStack, "Mage/Dark Wizard") ~= nil) then
---         PlaySpellWithDelay(AnimFirstSpell)
---     elseif (string.find(currItemStack, "Assassin/Ninja") ~= nil) then
---         PlaySpellWithDelay(AnimFirstSpell)
---     elseif (string.find(currItemStack, "Shaman/Skyseer") ~= nil) then
---         PlaySpellWithDelay(AnimFirstSpell)
---     end
--- end
-
--- function pings.onXPressDo()
---     local currItem = player:getHeldItem()
---     local currItemStack = currItem:toStackString()
-
---     if (string.find(currItemStack, "Warrior/Knight") ~= nil) then
---         PlaySpellWithDelay(AnimMovement)
---     elseif (string.find(currItemStack, "Mage/Dark Wizard") ~= nil) then
---         PlaySpellWithDelay(AnimMovement)
---     elseif (string.find(currItemStack, "Assassin/Ninja") ~= nil) then
---         PlaySpellWithDelay(AnimMovement)
---     elseif (string.find(currItemStack, "Shaman/Skyseer") ~= nil) then
---         PlaySpellWithDelay(AnimMovement)
---     end
--- end
-
--- function pings.onCPressDo()
---     local currItem = player:getHeldItem()
---     local currItemStack = currItem:toStackString()
-
---     if (string.find(currItemStack, "Warrior/Knight") ~= nil) then
---         PlaySpellWithDelay(AnimSecondSpell)
---     elseif (string.find(currItemStack, "Mage/Dark Wizard") ~= nil) then
---         PlaySpellWithDelay(AnimSecondSpell)
---     elseif (string.find(currItemStack, "Assassin/Ninja") ~= nil) then
---         PlaySpellWithDelay(AnimSecondSpell)
---     elseif (string.find(currItemStack, "Shaman/Skyseer") ~= nil) then
---         PlaySpellWithDelay(AnimSecondSpell)
---     end
--- end
-
--- function pings.onVPressDo()
---     local currItem = player:getHeldItem()
---     local currItemStack = currItem:toStackString()
-
---     if (string.find(currItemStack, "Warrior/Knight") ~= nil) then
---         PlaySpellWithDelay(AnimThirdSpell)
---     elseif (string.find(currItemStack, "Mage/Dark Wizard") ~= nil) then
---         PlaySpellWithDelay(AnimThirdSpell)
---     elseif (string.find(currItemStack, "Assassin/Ninja") ~= nil) then
---         PlaySpellWithDelay(AnimThirdSpell)
---     elseif (string.find(currItemStack, "Shaman/Skyseer") ~= nil) then
---         PlaySpellWithDelay(AnimThirdSpell)
---     end
--- end
-
--- local zKey = keybinds:of("Z","key.keyboard.z")
--- local xKey = keybinds:of("X","key.keyboard.x")
--- local cKey = keybinds:of("C","key.keyboard.c")
--- local vKey = keybinds:of("V","key.keyboard.v")
--- zKey.press = pings.onZPressDo
--- xKey.press = pings.onXPressDo
--- cKey.press = pings.onCPressDo
--- vKey.press = pings.onVPressDo
-
--- SquAPI Animation Handling ============================================================================
-
-squapi.smoothHead:new({modelHead, modelMainBody}, {0.6, 0.25}, 0.1, 1.75, false)
 
 -- Render animation conditions by in game ticks
 function events.tick() --============================================================================================================================
-    -- Attack animation priorities ----------------------------------------------
-    local p = getAnimPriority()
 
-    AnimPunch:setPriority(p)
-
-    WarriorSwing1:setPriority(p)
-    WarriorSwing2:setPriority(p)
-    WarriorSwing3:setPriority(p)
-
-    MageSwing1:setPriority(p)
-    MageSwing2:setPriority(p)
-    MageSwing3:setPriority(p)
-
-    AssassinSwing1:setPriority(p)
-    AssassinSwing2:setPriority(p)
-    AssassinSwing3:setPriority(p)
-
-    ArcherShoot:setPriority(p)
-    ArcherShootHold:setPriority(p)
-
-    ShamanSwing:setPriority(p)
-
-    -- AnimMovement:setPriority(4)
-    -- AnimFirstSpell:setPriority(4)
-    -- AnimSecondSpell:setPriority(4)
-    -- AnimThirdSpell:setPriority(4)
-
-    -- Basic action animation prioirites ----------------------------------------
-    AnimIdle:setPriority(1)
-    AnimIdling1:setPriority(2)
-    AnimIdling2:setPriority(2)
-    AnimIdling3:setPriority(2)
-
-    AnimCrouching:setPriority(1)
-    AnimCrouchWalk:setPriority(1)
-    AnimCrouch:setPriority(2)
-    AnimUnCrouch:setPriority(2)
-
-    AnimWalk:setPriority(2)
-    AnimSprint:setPriority(2)
-
-    AnimCrawl:setPriority(2)
-    AnimCrawling:setPriority(2)
-
-    AnimJumping:setPriority(1)
-    AnimJump:setPriority(2)
-    AnimJumpLand:setPriority(2)
-    AnimJumpMove1:setPriority(2)
-    AnimJumpMove2:setPriority(2)
-    AnimJumpMoveStop1:setPriority(2)
-    AnimJumpMoveStop2:setPriority(2)
-    AnimCrouchJumping:setPriority(2)
-
-    AnimShortFalling:setPriority(1)
-    AnimFall:setPriority(2)
-    AnimShortLand:setPriority(2)
-    AnimFalling:setPriority(2)
-    AnimFallLand:setPriority(2)
-
-    AnimSwim:setPriority(1)
-    AnimFloat:setPriority(1)
-
-    AnimClimb:setPriority(1)
-    AnimClimbHold:setPriority(1)
-
-    AnimSit:setPriority(1)
-    AnimHorseSit:setPriority(1)
-    AnimHorseRiding:setPriority(1)
-
-    AnimTaunt1:setPriority(4)
-    AnimTaunt2a:setPriority(p)
-    AnimTaunt2b:setPriority(p)
-    AnimTaunt3:setPriority(4)
-    AnimTaunt4:setPriority(4)
+    -- Item Use Priority --------------------------------------------------------
+    AnimBowShootHold:setPriority(player:isUsingItem() and 1 or 0)
+    AnimCrossBowLoad:setPriority(player:isUsingItem() and 1 or 0)
+    AnimCrossBowHold:setPriority((player:isUsingItem()) and 1 or 0)
 
     -- Handle crouch model position ---------------------------------------------
     if (player:getPose() == "CROUCHING") then
@@ -685,9 +430,50 @@ function events.tick() --=======================================================
         pModel:setPos(0,0,0)
     end
 
+    -- Handle Helmet/Hat visibility ---------------------------------------------
+    if (string.find(player:getItem(6).id, "helmet") ~= nil) then
+        vanilla_model.ARMOR:setVisible(false)
+    else
+        vanilla_model.ARMOR:setVisible(true)
+    end
+
+    -- Handle Custom Attacking --------------------------------------------------
+    if (WarriorSwung:isPlaying() or WarriorMine:isPlaying() or (player:getSwingTime() == 1 and weaponClass == "Warrior/Knight")) then
+        AnimPunch:stop()
+        AnimMine:stop()
+        WarriorSwung:stop()
+        WarriorMine:stop()
+        CheckAnimToPlayLeftClick(WarriorSwing1, WarriorSwing2, WarriorSwing3)
+    end
+
+    if (MageSwung:isPlaying() or MageMine:isPlaying() or (player:getSwingTime() == 1 and weaponClass == "Mage/Dark Wizard")) then
+        AnimPunch:stop()
+        AnimMine:stop()
+        MageSwung:stop()
+        MageMine:stop()
+        CheckAnimToPlayLeftClick(MageSwing1, MageSwing2, MageSwing3)
+    end
+
+    if (AssassinSwung:isPlaying() or AssassinMine:isPlaying() or AnimSwordSwing:isPlaying() or (player:getSwingTime() == 1 and weaponClass == "Assassin/Ninja")) then
+        AnimPunch:stop()
+        AnimMine:stop()
+        AssassinSwung:stop()
+        AssassinMine:stop()
+        AnimSwordSwing:stop()
+        CheckAnimToPlayLeftClick(AssassinSwing1, AssassinSwing2, AssassinSwing3)
+    end
+
+    if (ShamanSwung:isPlaying() or ShamanMine:isPlaying() or (player:getSwingTime() == 1 and weaponClass == "Shaman/Skyseer")) then
+        AnimPunch:stop()
+        AnimMine:stop()
+        ShamanSwung:stop()
+        ShamanMine:stop()
+        CheckAnimToPlayLeftClick(ShamanSwing)
+    end
+
     -- Idling -------------------------------------------------------------------
     if (idleAnimations) then
-        if (state == "idle") then
+        if (AnimIdle:isPlaying()) then
             idleTick = idleTick + 1
             if (idleTick == randTick) then
                 randAnim = math.random(0, 2)
@@ -702,335 +488,242 @@ function events.tick() --=======================================================
                 randTick = GetRandIdleTick()
             end
         else
-            idleTick = 0
-            StopAllIdle()
+            ResetIdle()
         end
 
-        if (hitKey:isPressed() and not action_wheel:isEnabled()) then
-            idleTick = 0
-            StopAllIdle()
+        if (player:getSwingTime() ~= 0) then
+            ResetIdle()
         end
-    end
 
-    -- Bow Shooting -------------------------------------------------------------
-    if (weaponClass ~= "Archer/Hunter" and string.find(player:getHeldItem():toStackString(), "bow") ~= nil) then
-        ShootingAction = player:getActiveItem():getUseAction() == "BOW" or player:getActiveItem():getUseAction() == "CROSSBOW"
-    end
-    if (ShootingAction) then
-        ArcherShootHold:play()
-    else
-        ArcherShootHold:stop()
-    end
-
-    -- Dedect right click use arm swing -----------------------------------------
-    if (useKey:isPressed()) then
-        rightWasPressed = true
-    end
-    if (rightWasPressed and player:isSwingingArm() and player:getSwingTime() == 1) then
-        AnimPunch:restart()
-        rightWasPressed = false
+        if (IsTaunting()) then
+            idleTick = 0
+        end
     end
 
     -- Scales walk/run speed animation based on player vel -------------------
     local horizontalVel = player:getVelocity().x_z:length()
-
+    local walkSpeed = horizontalVel*4.65
+    local sprintSpeed = horizontalVel*3.575
+    local crouchWalkSpeed = horizontalVel*15
     -- Walking
-    if (horizontalVel*3.8 >= 2) then
-        AnimWalk:setSpeed(2)
+    if (walkSpeed >= 1.5) then
+        AnimWalk:setSpeed(1.5)
+    elseif (walkSpeed <= 0.5) then
+        AnimWalk:setSpeed(0.5)
     else
-        AnimWalk:setSpeed(horizontalVel*3.8)
+        AnimWalk:setSpeed(walkSpeed)
     end
     -- Sprinting
-    if (horizontalVel*3.4 >= 1.1) then
-        AnimSprint:setSpeed(1.1)
+    if (sprintSpeed >= 1) then
+        AnimSprint:setSpeed(1)
+    elseif (sprintSpeed <= 0.5) then
+        AnimSprint:setSpeed(0.5)
     else
-        AnimSprint:setSpeed(horizontalVel*3.4)
+        AnimSprint:setSpeed(sprintSpeed)
     end
     -- Crouch Walking
-    AnimCrouchWalk:setSpeed(horizontalVel*10)
-
-    -- Handle Helmet/Hat visibility ---------------------------------------------
-    if (string.find(player:getItem(6).id, "helmet") ~= nil) then
-        vanilla_model.ARMOR:setVisible(false)
+    if (crouchWalkSpeed >= 1) then
+        AnimCrouchWalk:setSpeed(1)
     else
-        vanilla_model.ARMOR:setVisible(true)
+        AnimCrouchWalk:setSpeed(crouchWalkSpeed)
     end
 
 end
 
 -- Render animation condtions using render function
 function events.render(delta, context) --============================================================================================================================
-    local crouching = player:getPose() == "CROUCHING"
+
+    -- Player Conditions --------------------------------------------------------
     local swimming = player:isVisuallySwimming()
     local floating = player:isInWater()
-    local sprinting = player:isSprinting()
     local walking = player:getVelocity().xz:length() > .001
     local climbing = player:isClimbing()
     local isGrounded = isOnGround(player)
     local sitting = player:getVehicle()
-    local horseSitting = player:getVehicle() and (player:getVehicle():getType() == "minecraft:horse")
-    local ridingMount = player:getVehicle() and (horseSitting or player:getVehicle():getType() == "minecraft:pig")
     local ridingSeat = player:getVehicle() and (player:getVehicle():getType() == "minecraft:minecart"
                                             or player:getVehicle():getType() == "minecraft:boat")
 
-    -- Play animation under certain conditions ----------------------------------
+    -- Is Action Wheel Open -----------------------------------------------------
+    wheelCheck = action_wheel:isEnabled()
+    if (wheelCheck ~= oldWheelCheck) then
+        pings.syncAcitonWheel(wheelCheck)
+    end
+    oldWheelCheck = wheelCheck
 
-    -- Interacting with water
-    if (floating or (swimming and floating)) then
-        if (floating and not swimming and isGrounded) then
-            -- On the ground, Underwater 
-            if (crouching) then
-                if (walking) then
-                    state = "crouch walking"
-                    stopBasicAnims({AnimCrouchWalk})
-                    AnimCrouchWalk:play()
-                else
-                    state = "crouching"
-                    stopBasicAnims({AnimCrouching, AnimIdle})
-                    AnimIdle:play()
-                    AnimCrouching:play()
-                end
-            elseif (not crouching) then
-                if (walking and not crouching and not sprinting) then
-                    state = "walking"
-                    stopBasicAnims({AnimWalk, AnimJumping})
-                    AnimWalk:play()
-                else
-                    state = "idle"
-                    stopBasicAnims({AnimIdle, AnimJumping})
-                    AnimIdle:play()
-                end
-            end
-        elseif (floating and not swimming and not isGrounded) then
-            state = "floatingAir"
-            stopBasicAnims({AnimFloat})
-            AnimFloat:play()
-        elseif (swimming) then
-            state = "swimming"
-            stopBasicAnims({AnimSwim})
-            AnimSwim:play()
-        end
-    else
-        -- Outside of water
-        if (isGrounded and (not ridingSeat and not sitting)) then
-            -- On the ground
-            if (crouching) then
-                if (walking) then
-                    state = "crouch walking"
-                    stopBasicAnims({AnimCrouchWalk, AnimCrouchJumping})
-                    AnimCrouchWalk:play()
-                else
-                    state = "crouching"
-                    stopBasicAnims({AnimCrouching, AnimIdle})
-                    AnimIdle:play()
-                    AnimCrouching:play()
-                end
-            elseif (not crouching) then
-                if (player:isVisuallySwimming()) then
-                    if (not walking) then
-                        state = "crawling"
-                        stopBasicAnims({AnimCrawl})
-                        AnimCrawl:play()
-                    elseif (walking) then
-                        state = "crawl walking"
-                        stopBasicAnims({AnimCrawling})
-                        AnimCrawling:play()
-                    end
-                elseif (walking and not crouching and not sprinting) then
-                    state = "walking"
-                    stopBasicAnims({AnimWalk, AnimJumping})
-                    AnimWalk:play()
-                elseif (sprinting) then
-                    state = "sprinting"
-                    stopBasicAnims({AnimSprint})
-                    AnimSprint:play()
-                else
-                    state = "idle"
-                    stopBasicAnims({AnimIdle, AnimJumping, AnimShortFalling})
-                    AnimIdle:play()
-                end
-            end
+    -- Held Item Wynncraft Class ------------------------------------------------
+    local currItem = player:getHeldItem()
+    local currItemStack = currItem:toStackString()
+    local class = CheckClassItem(currItemStack)
+    if (class ~= oldWeaponClass) then
+        pings.syncHeldItemIsWeapon(class)
+    end
+    oldWeaponClass = class
+
+    -- Spirnt Jumping -----------------------------------------------------------
+    isSprintJup = AnimSprintJumpUp:isPlaying()
+    isSprintJDown = AnimSprintJumpDown:isPlaying()
+
+    if wasSprintJup ~= isSprintJup and isSprintJup then
+        rightLeg = not rightLeg
+        if (rightLeg) then
+            AnimSprintJumpUp:setTime(0.0)
         else
-            -- Not on the ground
-            if (climbing) then
-                -- Interacting with ladder
-                if (player:getVelocity()[2] ~= 0) then
-                    state = "climbing"
-                else
-                    state = "holdingLadder"
-                end
-            elseif (sitting ~= nil) then
-                -- Sitting/Riding
-                if (ridingMount and walking) then
-                    if (horseSitting) then
-                        state = "ridingHorse"
-                        stopBasicAnims({AnimHorseRiding})
-                        AnimHorseRiding:play()
-                    else
-                        state = "sitting"
-                        stopBasicAnims({AnimSit})
-                        AnimSit:play()
-                    end
-                elseif (ridingSeat and walking) then
-                    state = "sitting"
-                    stopBasicAnims({AnimSit})
-                    AnimSit:play()
-                elseif (not walking and (sitting or ridingMount or ridingSeat)) then
-                    if (horseSitting) then
-                        state = "horseSitting"
-                        stopBasicAnims({AnimHorseSit})
-                        AnimHorseSit:play()
-                    else
-                        state = "sitting"
-                        stopBasicAnims({AnimSit})
-                        AnimSit:play()
-                    end
-                end
-            else
-                state = "inAir"
-                stopBasicAnims({AnimJumping, AnimShortFalling, AnimCrouching, AnimCrouchWalk, AnimCrouchJumping})
-            end
+            AnimSprintJumpUp:setTime(0.3)
+        end
+    end
+    if wasSprintJDown ~= isSprintJDown and isSprintJDown then
+        AnimSprintJumpDown:setTime(AnimSprintJumpUp:getTime())
+    end
+
+    wasSprintJup = isSprintJup
+    wasSprintJDown = isSprintJDown
+
+    -- Short Fall condition -----------------------------------------------------
+    if (host:isHost()) then
+        if (player:getVelocity().y < 0 and AnimWalk:isPlaying()) then
+            AnimShortFalling:play()
+        else
+            AnimShortFalling:stop()
         end
     end
 
-    -- Falling conditions
-    --print((client:getSystemTime() % 10000) / 1000)
-    if (state == "inAir" or state == "falling") then
+    -- Falling condition --------------------------------------------------------
+    local airState = not (floating or (swimming and floating)) and not isGrounded and not ridingSeat and not sitting and not climbing and not (ridingSeat and walking)
+    yVel = player:getVelocity().y
+    if (yVel > 0 and oldYVel < 0) then
+        airState = false
+    end
+
+    if (airState) then
         if (not startedFall) then
             startFallTime = client:getSystemTime() / 1000
             startedFall = true
         end
         fallTimer = (client:getSystemTime() / 1000 - startFallTime)
 
-        if (fallTimer > 0.7) then
+        if (fallTimer > 0.75) then
             state = "falling"
+            AnimFreeFalling:play()
         end
     else
+        if (AnimFreeFalling:isPlaying()) then
+            AnimFreeFalling:stop()
+            AnimLand:play()
+        end
         startedFall = false
     end
 
-    -- Crouching conditions
-    if (state ~= oldState) then
-        if (state == "crouching" and (oldState == "idle" or oldState == "inAir")) then
-            AnimCrouch:play()
-        elseif (oldState == "crouching" and state == "idle") then
-            AnimUnCrouch:play()
-        elseif (state == "crouch walking" and oldState == "walking") then
-            AnimCrouch:play()
-        elseif (oldState == "crouch walking" and state == "walking") then
-            AnimUnCrouch:play()
-        end
-    end
+    oldYVel = yVel
 
-    -- Jumping/InAir conditions
-    if (state ~= oldState) then
-        -- Stop Jump Sprinting
-        if (AnimJumpMove1:isPlaying()) then
-            AnimJumpMove1:stop()
-            AnimJumpMoveStop1:play()
-        elseif (AnimJumpMove2:isPlaying()) then
-            AnimJumpMove2:stop()
-            AnimJumpMoveStop2:play()
-        end
+    -- Climbing conditions ------------------------------------------------------
+    facing = world.getBlockState(player:getPos()):getProperties()["facing"]
 
-        if (oldState == "sprinting" and state == "inAir" and player:getVelocity()[2] > 0) then
-            -- Jump sprinting
-            WhichJump(AnimJumpMove1, AnimJumpMove2)
-        elseif (oldState == "inAir" and state == "falling") then
-            -- Going into Long falling
-            AnimJumping:stop()
-            AnimShortFalling:stop()
-            AnimFalling:play()
-        elseif (AnimFalling:isPlaying()) then
-            -- Stop long Falling
-            AnimFalling:stop()
-            AnimFallLand:play()
-        elseif ((oldState == "idle" or oldState == "walking") and state == "inAir" and player:getVelocity()[2] > 0) then
-            -- Going into Jumping
-            AnimJump:play()
-            AnimJumping:play()
-        elseif ((oldState == "crouching" or oldState == "crouch walking") and state == "inAir" and player:getVelocity()[2] > 0) then
-            -- Going into Crouch Jump
-            AnimUnCrouch:play()
-            AnimCrouchJumping:play()
-        elseif (AnimCrouchJumping:isPlaying() and isGrounded) then
-            -- Stop Crouch Jumping
-            AnimCrouchJumping:stop()
-            if (state == "crouching" or state == "crouch walking") then
-                AnimCrouch:play()
-            end
-        elseif (AnimJumping:isPlaying() and isGrounded) then
-            -- Stop Jumping
-            AnimJumping:stop()
-            AnimJumpLand:play()
-        elseif ((oldState == "idle" or oldState == "walking" or oldState == "sprinting") and state == "inAir") then
-            -- Going into short Falling
-            AnimFall:play()
-            AnimShortFalling:play()
-        elseif (AnimShortFalling:isPlaying()) then
-            -- Stop short Falling
-            AnimShortFalling:stop()
-            AnimShortLand:play()
-        end
-    end
+    local blockIsClimbable = string.find(world.getBlockState(player:getPos():add(0,0,0)).id, "vine") ~= nil or facing ~= nil
+    local offBlockIsClimbable = string.find(world.getBlockState(player:getPos():add(0,0.33,0)).id, "vine") ~= nil
+                            or string.find(world.getBlockState(player:getPos():add(0,0.33,0)).id, "ladder") ~= nil
 
-    -- Climbing conditions
-    local facing = world.getBlockState(player:getPos()):getProperties()["facing"]
-    if (oldState ~= state) then
-        -- play respective animation
-        if (state == "climbing") then
-            stopBasicAnims({AnimClimb})
-            AnimClimb:play()
-        elseif (state == "holdingLadder") then
-            stopBasicAnims({AnimClimbHold})
-            AnimClimbHold:play()
-        else
-            AnimClimb:stop()
-            AnimClimbHold:stop()
-        end
-    end
-    if (state == "climbing" or state == "holdingLadder") then
+    if (AnimClimb:isPlaying() or AnimClimbCrouch:isPlaying() or AnimClimbCrouchWalk:isPlaying()) then
         -- rotate player towards ladder
-        local rot
+        local desiredRot
         if (facing == "south") then
-            rot = player:getBodyYaw(delta)-180
+            desiredRot = player:getBodyYaw(delta)-180
         elseif (facing == "north") then
-            rot = player:getBodyYaw(delta)
+            desiredRot = player:getBodyYaw(delta)
         elseif (facing == "west") then
-            rot = player:getBodyYaw(delta)+90
+            desiredRot = player:getBodyYaw(delta)+90
         elseif (facing == "east") then
-            rot = player:getBodyYaw(delta)-90
+            desiredRot = player:getBodyYaw(delta)-90
+        else
+            desiredRot = 0
         end
-        pModel:setOffsetRot(0,rot,0)
-        --pModel.Upper:setRot(-player:getLookDir()[2]*45,0,0)
 
-        -- rotate more when at top of ladder
-        if (world.getBlockState(player:getPos()).id == "minecraft:ladder" and world.getBlockState(player:getPos():add(0,1,0)).id == "minecraft:air") then
-            pModel.Upper:setRot(-player:getLookDir()[2]*45-35,0,0)
+        if (blendClimb) then
+            climbBlendInRot = 0
+            blendClimb = false
+        end
+
+        climbBlendInRot = math.lerpAngle(climbBlendInRot, desiredRot, 0.075)
+        if (not blendClimbDone) then
+            pModel:setRot(0,climbBlendInRot,0)
+        else
+            pModel:setRot(0,desiredRot,0)
+        end
+
+        if (oldFacing ~= facing) then
+            blendClimbDone = false
+        end
+        if (math.round(climbBlendInRot) == math.round(((desiredRot % 360) + 360) % 360)) then
+            blendClimbDone = true
+        end
+        oldFacing = facing
+
+        -- rotate upper body when at top of ladder
+        -- local lowerBlock = world.getBlockState(player:getPos():add(0,0,0)).id
+        local upperBlock = world.getBlockState(player:getPos():add(0,1,0)).id
+        -- local lowerBlockOff = world.getBlockState(player:getPos():add(0,0.33,0)).id
+        local upperBlockOff = world.getBlockState(player:getPos():add(0,1.33,0)).id
+        local desiredUpperRot = 0
+        if (offBlockIsClimbable and upperBlockOff == "minecraft:air") then
+            if (player:getPos()[2] < 0) then
+                desiredUpperRot = ((math.abs(player:getPos()[2]+0.33) % 1) * 60) - 60
+            else
+                desiredUpperRot = -((math.abs(player:getPos()[2]+0.33) % 1) * 60)
+            end
+        elseif (blockIsClimbable and upperBlock == "minecraft:air") then
+            desiredUpperRot = 300
+        end
+        desiredUpperRot = ((desiredUpperRot % 360) + 360) % 360
+
+        if (blendClimbTop) then
+            climbTopBlendInRot = 0
+            blendClimbTop = false
+        end
+
+        if (climbTopBlendInRot == nil) then
+            climbTopBlendInRot = 0
+        else
+            climbTopBlendInRot = math.lerpAngle(climbTopBlendInRot, desiredUpperRot, 0.075)
+        end
+        pModel.Upper:setRot(climbTopBlendInRot,0,0)
+
+    else
+        -- blend out of rotation toward ladder
+        blendClimbDone = false
+        if (not blendClimb) then
+            climbBlendOutRot = climbBlendInRot
+            blendClimb = true
+        end
+        if (blendClimb and climbBlendOutRot ~= nil) then
+            climbBlendOutRot = math.lerpAngle(climbBlendOutRot, 0, 0.075)
+            pModel:setRot(0,climbBlendOutRot,0)
+        else
+            pModel:setRot(0,0,0)
+        end
+
+        -- blend upper body out of rotation at top of ladder 
+        if (not blendClimbTop) then
+            climbTopBlendOutRot = climbTopBlendInRot
+            blendClimbTop = true
+        end
+        if (blendClimbTop and climbTopBlendOutRot ~= nil) then
+            climbTopBlendOutRot = math.lerpAngle(climbTopBlendOutRot,0,0.075)
+            pModel.Upper:setRot(climbTopBlendOutRot,0,0)
         else
             pModel.Upper:setRot(0,0,0)
         end
-    else
-        pModel:setOffsetRot(0,0,0)
-        pModel.Upper:setRot(0,0,0)
+
     end
-
-    -- print("---")
-    -- print(state)
-    -- if (state ~= oldState) then
-    --     print(oldState, "->", state)
-    -- end
-
-    oldState = state
 end
+
+-- SquAPI Animation Handling ============================================================================
+
+squapi.smoothHead:new({modelHead, modelMainBody}, {0.6, 0.25}, 0.1, 1.75, false)
 
 -- Physics variables ====================================================================================
 local rArm = squassets.BERP:new()
 local lArm = squassets.BERP:new()
 local head = squassets.BERP:new()
 
--- "delta" is the percentage between the last and the next tick (as a decimal value, 0.0 to 1.0)
--- "context" is a string that tells from where this render event was called (the paperdoll, gui, player render, first person)
 function events.render(delta, context) --============================================================================================================
 
     -- First person hand model --------------------------------------------------
@@ -1043,9 +736,7 @@ function events.render(delta, context) --=======================================
     end
 
     -- Physics handling ---------------------------------------------------------
-    local vel = squassets.forwardVel()
 	local yvel = squassets.verticalVel()
-    local headRot = (modelHead:getOffsetRot()+180)%360-180
     local armTarget
     local headTarget
 
@@ -1063,7 +754,7 @@ function events.render(delta, context) --=======================================
     lArm:berp(armTarget, 0.25, 0.01, 0.2)
 
     -- Head physics -------------------------------------------------------------
-    modelHead:setRot(head.pos*1.5, 0, 0)
+    modelHead:setRot(head.pos*2, 0, 0)
     headTarget = -yvel * 20
     if (headTarget > 20) then
         headTarget = 20
@@ -1071,8 +762,9 @@ function events.render(delta, context) --=======================================
         headTarget = -10
     end
 
-    if (-yvel*20 > -10) then
-        head:berp(headTarget, 0.25, 0.01, 0.2)
+    -- Ignore stair/slab step
+    if (headTarget > -10) then
+        head:berp(headTarget, 0.25, 0.01, 0.4)
     end
 
 end
@@ -1083,7 +775,7 @@ local task
 local syncedItemID
 local oldItemID
 
-local syncedPlayerSlot
+local syncedPlayerSlot = 0
 local oldSlot
 
 local currWeapon
@@ -1400,8 +1092,10 @@ end
 pings.actionIdleAnims = IdleAnimation
 
 function pings.taunt1Dance()
-    StopAllIdle()
-    AnimTaunt1:play()
+    if (not AnimTaunt1:isPlaying()) then
+        ResetIdle()
+        AnimTaunt1:play()
+    end
 end
 
 function pings.taunt2Nod()
@@ -1416,28 +1110,38 @@ function pings.taunt2Nod()
 end
 
 function pings.taunt3JumpingJacks()
-    StopAllIdle()
-    AnimTaunt3:play()
+    if (not AnimTaunt3:isPlaying()) then
+        ResetIdle()
+        AnimTaunt3:play()
+    end
 end
 
 function pings.taunt4Inspect()
-    StopAllIdle()
-    AnimTaunt4:play()
+    if (not AnimTaunt4:isPlaying()) then
+        ResetIdle()
+        AnimTaunt4:play()
+    end
 end
 
 function pings.taunt5KickDirt()
-    StopAllIdle()
-    AnimIdling1:play()
+    if (not AnimIdling1:isPlaying()) then
+        ResetIdle()
+        AnimIdling1:play()
+    end
 end
 
 function pings.taunt6Look()
-    StopAllIdle()
-    AnimIdling2:play()
+    if (not AnimIdling2:isPlaying()) then
+        ResetIdle()
+        AnimIdling2:play()
+    end
 end
 
 function pings.taunt7Wait()
-    StopAllIdle()
-    AnimIdling3:play()
+    if (not AnimIdling3:isPlaying()) then
+        ResetIdle()
+        AnimIdling3:play()
+    end
 end
 
 local mainPage = action_wheel:newPage("Taunts")
@@ -1445,7 +1149,7 @@ local settingPage = action_wheel:newPage("Settings")
 action_wheel:setPage(mainPage)
 
 local toSettings = mainPage:newAction()
-    :title("Go to settings")
+    :title("Go to Settings")
     :item("minecraft:writable_book")
     :onLeftClick(function()
     action_wheel:setPage(settingPage)
@@ -1520,3 +1224,4 @@ local setting3 = settingPage:newAction()
 local setting4 = settingPage:newAction()
 local setting5 = settingPage:newAction()
 local setting6 = settingPage:newAction()
+local setting7 = settingPage:newAction()

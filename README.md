@@ -1,13 +1,14 @@
 # Wynn Extra Bends
 Figura Animation Overhaul Avatar made particularly for Wynncraft.\
-This figura avatar makes the normal Minecraft player avatar have\
+This figura avatar makes any normal Minecraft player avatar have\
 arm and leg limbs and adds numerous animations that replace\
-the normal Minecraft animations. This avatar was made using\
+the normal Minecraft animations. The avatar applies limbs to any\
+skin and works for slim variants. This avatar was made using\
 Figura versions 0.1.4, 0.1.5\
 Now works with Minecraft version 1.20 and 1.21
 
-![MovementAnimationDemo](https://github.com/emart126/AnimationsPlus/assets/125086504/ad378241-bdb0-43a9-8d58-9f0e7041f687)
-![ClimbingAnimationDemo](https://github.com/emart126/AnimationsPlus/assets/125086504/65b0baa1-a695-4efc-825c-3cfb761c2ccd)
+![MovementAnimationDemo](https://github.com/user-attachments/assets/db5ce548-367c-4188-acb3-4aa0462b2acc)
+![LadderAnimationDemo](https://github.com/user-attachments/assets/8e72db40-01ff-431d-a1f5-9468fbbac533)
 
 ### Animated Features
 +Walking\
@@ -40,8 +41,8 @@ Now works with Minecraft version 1.20 and 1.21
 +Shaman Attacking\
 +Weapon Holstering (Weapon in first hand slot)
 
-### Missing Features
--Left handed mode
+![AttackAnimationDemo](https://github.com/user-attachments/assets/fb0c801e-6031-4cb9-a7ec-7590a6185a3d)
+![ActionWheelDemo](https://github.com/user-attachments/assets/822da96c-cef3-4f93-88ca-70d920f47827)
 
 ### Other Added Feature (Figura Action Wheel)
 The firgura action wheel has temporary taunt animations\
@@ -50,9 +51,14 @@ in development.\
 There is now a second page to change the avatars settings\
 such as enabling/disabling weapon holstering and idle animations
 
+### Future Updates
+-Left handed mode
+
 ### Credits
 Main Programming: Vance568\
 Animations: Kazarov\
 Helper Library Help:\
-Squishy ("SquAPI" Library for physics)\
-Katt962 ("KattArmor" Library for Armor overlays)
+Jimmy H. ("JimmyAnims" Library for Animation Handling)\
+GrandpaScout ("GSAnimBlend" Library for Animation Blending)\
+Katt962 ("KattArmor" Library for Armor overlays)\
+Squishy ("SquAPI" Library for physics)
