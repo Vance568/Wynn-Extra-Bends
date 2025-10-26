@@ -7,7 +7,7 @@
 --                                                --
 --================================================--
 
---v4.1.3
+--v4.2.6
 
 ---@alias KattArmor.ArmorPartID
 ---| '"Helmet"'
@@ -76,17 +76,18 @@ end
 
 ---@type KattArmor.Instance[]
 local instances = {}
+---@alias KattArmor.onRenderCallback fun(materialID:KattArmor.MaterialID, partID:KattArmor.ArmorPartID, item:ItemStack, visible:boolean, renderType:"EMISSIVE"|"GLINT2", color:Vector3, texture:KattArmor.Material.Texture, textureType:"RESOURCE"|"CUSTOM"|nil, texture_e:KattArmor.Material.Texture, textureType_e:"RESOURCE"|"CUSTOM"|nil,damageOverlay:0|nil, trim:boolean, trimPattern:KattArmor.TrimPatternID?, trimMaterial:KattArmor.TrimMaterialID?, trimTexture:KattArmor.Material.Texture?, trimTextureType:"RESOURCE"|"CUSTOM"|nil, trimColor:Vector3?, trimUV:Matrix3?)
+local update = true
+local function forceUpdate()
+  update = true
+end
 ---@alias KattArmor.onChangeCallback fun(partID:KattArmor.ArmorPartID, item:ItemStack):KattArmor.MaterialID?
 ---@type KattArmor.onChangeCallback[]
 local changeCallbacks = {}
 ---@param fn KattArmor.onChangeCallback
 local function registerOnChange(fn)
   table.insert(changeCallbacks, fn)
-end
----@alias KattArmor.onRenderCallback fun(materialID:KattArmor.MaterialID, partID:KattArmor.ArmorPartID, item:ItemStack, visible:boolean, renderType:"EMISSIVE"|"GLINT", color:Vector3, texture:KattArmor.Material.Texture, textureType:"RESOURCE"|"CUSTOM"|nil, texture_e:KattArmor.Material.Texture, textureType_e:"RESOURCE"|"CUSTOM"|nil,damageOverlay:0|nil, trim:boolean, trimPattern:KattArmor.TrimPatternID?, trimMaterial:KattArmor.TrimMaterialID?, trimTexture:KattArmor.Material.Texture?, trimTextureType:"RESOURCE"|"CUSTOM"|nil, trimColor:Vector3?, trimUV:Matrix3?)
-local update = true
-local function forceUpdate()
-  update = true
+  forceUpdate()
 end
 ---@type table<KattArmor.ArmorPartID, KattArmor.ArmorPartSlot>
 local ArmorPart_SlotID_Map = {
@@ -111,6 +112,7 @@ local SlotID_ArmorPart_Map = {
 ---@field layer KattArmor.ArmorPart.Layer
 ---@field slot KattArmor.ArmorPartSlot
 ---@field override KattArmor.MaterialID?
+---@field overrideTrimNamespace string?
 ---@field overrideTrimPattern KattArmor.TrimPatternID?
 ---@field overrideTrimMaterial KattArmor.TrimMaterialID?
 ---@field prevItem ItemStack
@@ -142,6 +144,7 @@ function ArmorPart:addParts(...)
     end
     table.insert(self.parts, part)
   end
+  forceUpdate()
   return self
 end
 
@@ -180,6 +183,7 @@ function ArmorPart:addTrimParts(...)
     end
     table.insert(self.trimParts, part)
   end
+  forceUpdate()
   return self
 end
 
@@ -191,6 +195,7 @@ end
 function ArmorPart:setLayer(layer)
   if layer ~= 2 then layer = 1 end
   self.layer = layer
+  forceUpdate()
   return self
 end
 
@@ -201,15 +206,21 @@ function ArmorPart:setMaterial(material)
   if material ~= self.override then
     self.override = material
   end
+  forceUpdate()
   return self
 end
 
 ---Forces the trim with the material to render, ignoring whatever nbt data is present.
+---@param namespace string?
 ---@param trim KattArmor.TrimPatternID?
 ---@param material KattArmor.TrimMaterialID?
-function ArmorPart:setTrim(trim, material)
+---@return self
+function ArmorPart:setTrim(namespace, trim, material)
+  self.overrideTrimNamespace = namespace
   self.overrideTrimPattern = trim
   self.overrideTrimMaterial = material
+  forceUpdate()
+  return self
 end
 
 ---@alias KattArmor.Material.Texture Texture | string | nil
@@ -245,8 +256,10 @@ end
 ---@return self
 function Material:addParts(armorPart, ...)
   if type(armorPart) == "ArmorPart" then armorPart = SlotID_ArmorPart_Map[armorPart.slot] end
-  if not ArmorPart_SlotID_Map[armorPart] then error(("%s (%s) is not a valid ArmorPartID."):format(
-    tostring(armorPart), type(armorPart))) end
+  if not ArmorPart_SlotID_Map[armorPart] then
+    error(("%s (%s) is not a valid ArmorPartID."):format(
+      tostring(armorPart), type(armorPart)))
+  end
   if not self.parts[armorPart] then self.parts[armorPart] = {} end
   local parts = table.pack(...)
   for i = 1, parts.n do
@@ -259,6 +272,7 @@ function Material:addParts(armorPart, ...)
     end
     table.insert(self.parts[armorPart], part:setVisible(false))
   end
+  forceUpdate()
   return self
 end
 
@@ -268,6 +282,7 @@ end
 ---@return self
 function Material:setVisible(visible)
   self.visible = visible
+  forceUpdate()
   return self
 end
 
@@ -275,7 +290,13 @@ end
 ---@param texture KattArmor.Material.Texture
 ---@return self
 function Material:setTexture(texture)
+  if texture == nil then
+    error(
+      "Expected a ResourceID, a Texture, or false. Recieved nil. Make sure the texture path is correct.",
+      2)
+  end
   self.texture[1] = texture
+  forceUpdate()
   return self
 end
 
@@ -283,7 +304,13 @@ end
 ---@param texture KattArmor.Material.Texture
 ---@return self
 function Material:setTextureLayer2(texture)
+  if texture == nil then
+    error(
+      "Expected a ResourceID, a Texture, or false. Recieved nil. Make sure the texture path is correct.",
+      2)
+  end
   self.texture[2] = texture
+  forceUpdate()
   return self
 end
 
@@ -291,7 +318,13 @@ end
 ---@param texture KattArmor.Material.Texture
 ---@return self
 function Material:setEmissiveTexture(texture)
+  if texture == nil then
+    error(
+      "Expected a ResourceID, a Texture, or false. Recieved nil. Make sure the texture path is correct.",
+      2)
+  end
   self.texture_e[1] = texture
+  forceUpdate()
   return self
 end
 
@@ -299,7 +332,13 @@ end
 ---@param texture KattArmor.Material.Texture
 ---@return self
 function Material:setEmissiveTextureLayer2(texture)
+  if texture == nil then
+    error(
+      "Expected a ResourceID, a Texture, or false. Recieved nil. Make sure the texture path is correct.",
+      2)
+  end
   self.texture_e[2] = texture
+  forceUpdate()
   return self
 end
 
@@ -309,6 +348,7 @@ end
 ---@return self
 function Material:setForceGlint(glint)
   self.forceGlint = glint
+  forceUpdate()
   return self
 end
 
@@ -318,6 +358,7 @@ end
 ---@return self
 function Material:setShouldUseColor(bool)
   self.shouldUseColor = bool
+  forceUpdate()
   return self
 end
 
@@ -327,6 +368,7 @@ end
 ---@return self
 function Material:setDefaultColor(color)
   self.defaultColor = color
+  forceUpdate()
   return self
 end
 
@@ -336,6 +378,7 @@ end
 ---@return self
 function Material:setMaterialPartsColorChange(bool)
   self.materialPartsColor = bool
+  forceUpdate()
   return self
 end
 
@@ -345,6 +388,7 @@ end
 ---@return self
 function Material:setDamageOverlay(bool)
   self.damageOverlay = bool
+  forceUpdate()
   return self
 end
 
@@ -365,6 +409,7 @@ end
 ---@return self
 function TrimPattern:setTexture(texture)
   self.textures[1] = texture
+  forceUpdate()
   return self
 end
 
@@ -376,12 +421,13 @@ end
 ---@return self
 function TrimPattern:setTextureLayer2(texture)
   self.textures[2] = texture
+  forceUpdate()
   return self
 end
 
 ---@class KattArmor.TrimMaterial
 ---@field color Vector3
----@field textures table<KattArmor.TrimPatternID, table<KattArmor.ArmorPart.Layer, Texture|nil>>
+---@field textures table<KattArmor.TrimPatternID, table<KattArmor.ArmorPart.Layer|3|4, Texture|nil>>
 ---
 ---@field new fun():KattArmor.TrimMaterial
 local TrimMaterial = Class()
@@ -395,6 +441,7 @@ end
 ---@return self
 function TrimMaterial:setColor(color)
   self.color:set(color or vec(1, 1, 1))
+  forceUpdate()
   return self
 end
 
@@ -405,8 +452,14 @@ end
 ---@param texture Texture
 ---@return self
 function TrimMaterial:setTexture(trim, texture)
+  if texture == nil then
+    error(
+      "Expected a ResourceID, a Texture, or false. Recieved nil. Make sure the texture path is correct.",
+      2)
+  end
   if not self.textures[trim] then self.textures[trim] = {} end
   self.textures[trim][1] = texture
+  forceUpdate()
   return self
 end
 
@@ -417,8 +470,47 @@ end
 ---@param texture Texture
 ---@return self
 function TrimMaterial:setTextureLayer2(trim, texture)
+  if texture == nil then
+    error(
+      "Expected a ResourceID, a Texture, or false. Recieved nil. Make sure the texture path is correct.",
+      2)
+  end
   if not self.textures[trim] then self.textures[trim] = {} end
   self.textures[trim][2] = texture
+  forceUpdate()
+  return self
+end
+
+---Sets the texture that will be used when the trimMaterialID matches the armorMaterialID
+---Only used when there is a custom texture applied via `TrimMaterial:setTexture`
+---@param trim KattArmor.TrimPatternID
+---@param texture Texture
+---@return self
+function TrimMaterial:setTextureDarker(trim, texture)
+  if texture == nil then
+    error(
+      "Expected a ResourceID, a Texture, or false. Recieved nil. Make sure the texture path is correct.",
+      2)
+  end
+  if not self.textures[trim] then self.textures[trim] = {} end
+  self.textures[trim][1 + 2] = texture
+  forceUpdate()
+  return self
+end
+
+---Sets the texture that will be used when the trimMaterialID matches the armorMaterialID
+---Only used when there is a custom texture applied via `TrimMaterial:setTextureLayer2`
+---@param texture Texture
+---@return self
+function TrimMaterial:setTextureDarkerLayer2(trim, texture)
+  if texture == nil then
+    error(
+      "Expected a ResourceID, a Texture, or false. Recieved nil. Make sure the texture path is correct.",
+      2)
+  end
+  if not self.textures[trim] then self.textures[trim] = {} end
+  self.textures[trim][2 + 2] = texture
+  forceUpdate()
   return self
 end
 
@@ -435,8 +527,10 @@ end
 ---@field private _renderCallbacks KattArmor.onRenderCallback[]
 
 local prevItems = {}
-local armorTexturePath = "minecraft:textures/models/armor/%s_layer_%s.png"
-local armorTrimSpritePath = "minecraft:trims/models/armor/%s_%s"
+local armorTexturePath = "%s:textures/models/armor/%s_layer_%s.png"
+local armorTexturePath1_21_3 = "%s:textures/entity/equipment/%s/%s.png"
+local armorTrimSpritePath = "%s:trims/models/armor/%s_%s"
+local armorTrimSpritePath1_21_3 = "%s:trims/entity/%s/%s_%s"
 local armorTrimAtlasPath = "minecraft:textures/atlas/armor_trims.png"
 function events.TICK()
   for slot = 6, 3, -1 do
@@ -491,9 +585,9 @@ function events.TICK()
       )
       local renderType
       if materialData.forceGlint ~= nil then
-        renderType = materialData.forceGlint and "GLINT" or "EMISSIVE"
+        renderType = materialData.forceGlint and "GLINT2" or "EMISSIVE"
       else
-        renderType = item:hasGlint() and "GLINT" or "EMISSIVE"
+        renderType = item:hasGlint() and "GLINT2" or "EMISSIVE"
       end
 
       local damageOverlay = (not materialData.damageOverlay) and 0 or nil
@@ -512,20 +606,30 @@ function events.TICK()
         local materialPartsColor = materialData.materialPartsColor and color or 0xFFFFFF
         for _, modelPart in ipairs(materialData.parts[partID]) do
           modelPart
-              :setVisible()
+              :setVisible(true)
               :setSecondaryRenderType(renderType)
               :setColor(materialPartsColor)
               :setOverlay(damageOverlay, 15)
         end
       end
 
-      ---@type KattArmor.TrimPatternID, KattArmor.TrimMaterialID
-      local trimPattern, trimMaterial
+      ---@type string, KattArmor.TrimPatternID, KattArmor.TrimMaterialID
+      local trimNamespace, trimPattern, trimMaterial
       if partData.overrideTrimPattern and partData.overrideTrimMaterial then
-        trimPattern, trimMaterial = partData.overrideTrimPattern, partData.overrideTrimMaterial
+        trimNamespace, trimPattern, trimMaterial =
+            partData.overrideTrimNamespace or "minecraft", partData.overrideTrimPattern,
+            partData.overrideTrimMaterial
       elseif item.tag and item.tag.Trim and item.tag.Trim.pattern and item.tag.Trim.material then
-        trimPattern, trimMaterial =
-            item.tag.Trim.pattern:match("^.+:(.+)$"), item.tag.Trim.material:match("^.+:(.+)$")
+        if(item.tag.Trim.pattern:find(':', nil, true)) then
+          trimNamespace, trimPattern = item.tag.Trim.pattern:match("^(.+):(.+)$")
+        else
+          trimNamespace, trimPattern = 'minecraft', item.tag.Trim.pattern
+        end
+        if(item.tag.Trim.pattern:find(':', nil, true)) then
+          trimMaterial = item.tag.Trim.material:match("^.+:(.+)$")
+        else
+          trimMaterial =item.tag.Trim.material
+        end
       end
 
       local trim = (trimPattern and trimMaterial) and true or false
@@ -537,32 +641,38 @@ function events.TICK()
         local overrideTrimTexture = trimMaterialData.textures[trimPattern]
         if overrideTrimTexture and overrideTrimTexture[partData.layer] then
           trimTextureType = "CUSTOM"
-          trimTexture = overrideTrimTexture[partData.layer]
+          if localMaterialID == trimMaterial and overrideTrimTexture[partData.layer + 2] then
+            trimTexture = overrideTrimTexture[partData.layer + 2]
+          else
+            trimTexture = overrideTrimTexture[partData.layer]
+          end
         elseif trimPatternData.textures[partData.layer] then
           trimTextureType = "CUSTOM"
           trimTexture = trimPatternData.textures[partData.layer]
           trimColor = trimMaterialData.color
-        elseif client:getAtlas(armorTrimAtlasPath) then
+          if localMaterialID == trimMaterial and trimColor then
+            trimColor = trimColor * 0.6
+          end
+        elseif client.getAtlas(armorTrimAtlasPath) then
           trimTextureType = "RESOURCE"
           trimTexture = armorTrimAtlasPath
-          local atlas = client:getAtlas(armorTrimAtlasPath)
+          local atlas = client.getAtlas(armorTrimAtlasPath)
           local atlasDimensions = vec(atlas:getWidth(), atlas:getHeight())
           local atlasPattern, atlasMaterial = trimPattern, trimMaterial
           if partData.layer == 2 then atlasPattern = atlasPattern .. "_leggings" end
-          if materialID == atlasMaterial then
+          if localMaterialID == atlasMaterial then
             atlasMaterial = atlasMaterial .. "_darker"
-          elseif materialID == "golden" and atlasMaterial == "gold" then
+          elseif localMaterialID == "golden" and atlasMaterial == "gold" then
             atlasMaterial = atlasMaterial .. "_darker"
           end
-          local spriteData = atlas:getSpriteUV(armorTrimSpritePath:format(atlasPattern, atlasMaterial))
+          local missingnoSpriteData = atlas:getSpriteUV('missingno')
+          local spriteData = atlas:getSpriteUV(armorTrimSpritePath:format(trimNamespace, atlasPattern, atlasMaterial))
+          if spriteData==missingnoSpriteData then
+            spriteData = atlas:getSpriteUV(armorTrimSpritePath1_21_3:format(trimNamespace, partData.layer==2 and "humanoid_leggings" or "humanoid", trimPattern, atlasMaterial))
+          end
           trimUV = matrices.mat3()
-              :scale(
-                64 / 1024,
-                32 / 1024
-              ):translate(
-                spriteData.x * (atlasDimensions.x / 64),
-                spriteData.y * (atlasDimensions.y / 64)
-              )
+                :scale((spriteData.zw_ - spriteData.xy_):add(0, 0, 1))
+                :translate(spriteData.xy)
         end
       end
       for _, modelPart in ipairs(partData.trimParts) do
@@ -603,21 +713,28 @@ local armorMetatable = {
 local materialsMetatable = {
   __index = function(self, index)
     local newMaterial = Material:new()
-    if type(index) == "string" then
-      local t = armorTexturePath:format(index, "1")
+    if type(index) == "string" and index:match("^[a-z0-9%/%-%_%.]+$") then
+      local t = armorTexturePath:format("minecraft", index, "1")
+      local t1_21_3 = armorTexturePath1_21_3:format("minecraft", "humanoid", index)
       if client.hasResource(t) then
         newMaterial:setTexture(t)
-        local t2 = armorTexturePath:format(index, "2")
+        local t2 = armorTexturePath:format("minecraft", index, "2")
         if client.hasResource(t2) then
           newMaterial:setTextureLayer2(t2)
         end
-        local t_e = armorTexturePath:format(index, "1_e")
+        local t_e = armorTexturePath:format("minecraft", index, "1_e")
         if client.hasResource(t_e) then
           newMaterial:setEmissiveTexture(t_e)
-          local t2_e = armorTexturePath:format(index, "2_e")
+          local t2_e = armorTexturePath:format("minecraft", index, "2_e")
           if client.hasResource(t2_e) then
             newMaterial:setEmissiveTextureLayer2(t2_e)
           end
+        end
+      elseif client.hasResource(t1_21_3) then
+        newMaterial:setTexture(t1_21_3)
+        local t1_21_3_2 = armorTexturePath1_21_3:format("minecraft", "humanoid_leggings", index)
+        if client.hasResource(t1_21_3_2) then
+          newMaterial:setTextureLayer2(t1_21_3_2)
         end
       end
     end
@@ -686,6 +803,7 @@ return function()
   ---@param fn KattArmor.onRenderCallback
   function instance.registerOnRender(fn)
     table.insert(instance._renderCallbacks, fn)
+    forceUpdate()
   end
 
   table.insert(instances, instance)

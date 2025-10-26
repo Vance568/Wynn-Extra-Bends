@@ -37,8 +37,8 @@
 
 --setup stuff
 local squassets 
-if pcall(require, "SquAssets") then
-    squassets = require("SquAssets")
+if pcall(require, "libraries/SquAssets") then
+    squassets = require("libraries/SquAssets")
 else
     error("§4Missing SquAssets file! Make sure to download that from the GitHub too!§c")
 end
